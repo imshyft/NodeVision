@@ -6,8 +6,4 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\NodeVision.Core\NodeVision.Core.csproj" />
-    </ItemGroup>
-
 </Project>

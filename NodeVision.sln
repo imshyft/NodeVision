@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NodeVision.App", "src\NodeV
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NodeVision.Rendering", "src\NodeVision.Rendering\NodeVision.Rendering.csproj", "{844CDEEF-E478-4C0A-8B15-671675074111}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NodeVision.Core", "src\NodeVision.Core\NodeVision.Core.csproj", "{1AE8FE57-778A-413B-A2A0-749D8D093072}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{844CDEEF-E478-4C0A-8B15-671675074111}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{844CDEEF-E478-4C0A-8B15-671675074111}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{844CDEEF-E478-4C0A-8B15-671675074111}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1AE8FE57-778A-413B-A2A0-749D8D093072}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1AE8FE57-778A-413B-A2A0-749D8D093072}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1AE8FE57-778A-413B-A2A0-749D8D093072}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1AE8FE57-778A-413B-A2A0-749D8D093072}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

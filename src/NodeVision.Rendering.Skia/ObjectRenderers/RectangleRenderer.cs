@@ -3,10 +3,11 @@ using SkiaSharp;
 
 namespace NodeVision.Rendering.Skia.ObjectRenderers;
 
-public class RectangleRenderer
+public class RectangleRenderer : SkiaObjectRenderer
 {
-    public void Draw(DrawRectangleCommand command, SKCanvas canvas)
+    public override void DrawObject(DrawCommand command, SKCanvas canvas)
     {
+        var rectangleCommand = (DrawRectangleCommand)command;
         using var paint = new SKPaint
         {
             Color = SkiaHelpers.ConvertColour(command.Colour),

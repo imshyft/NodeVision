@@ -16,5 +16,6 @@ public partial class MainWindow : Window
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
         scene = TestSceneFactory.CreateScene();
+        SceneViewControl.SetScene(scene);
     }
 }

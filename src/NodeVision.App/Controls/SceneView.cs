@@ -1,38 +1,59 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Threading;
 using NodeVision.Core;
 using NodeVision.Rendering;
+using NodeVision.Rendering.Skia;
 using SkiaSharp;
 
 namespace NodeVision.App.Controls;
 
-public class TestSceneView : Control
+public class SceneView : Control
 {
-    private Scene _scene;
+    private Scene? _scene;
     private RenderBuilder _graphicsBuilder;
+    private SkiaRenderer _renderer;
+
+    public SceneView()
+    {
+        _renderer = new SkiaRenderer();
+        _graphicsBuilder = new RenderBuilder();
+    }
+
+    public void SetScene(Scene scene)
+    {
+        _scene = scene;
+    }
     
-    
+
     // visualisation.attatch(scene)
     public override void Render(DrawingContext context)
     {
-        var renderCommands = _graphicsBuilder.BuildScene(_scene);
+        if (_scene != null)
+        {
+            var renderCommands = _graphicsBuilder.BuildScene(_scene);
+            context.Custom(new SceneDrawOperation(new Rect(0, 0, Bounds.Width, Bounds.Height), _renderer, renderCommands));
+        }
+        Dispatcher.UIThread.InvokeAsync(InvalidateVisual, DispatcherPriority.Background);
+
         // Visualisation.update(deltaTime)
         // var renderCommands = renderBuilder.BuildCommands(scene)
         // renderer.render(renderCommands)
     }
 }
 
-public class SceneView : Control
+public class TestSceneView : Control
 {
     private readonly GlyphRun _noSkia;
-    public SceneView()
+    public TestSceneView()
     {
         ClipToBounds = true;
         var text = "Current rendering API is not Skia";
@@ -44,6 +65,47 @@ public class SceneView : Control
     {
         context.Custom(new CustomDrawOp(new Rect(0, 0, Bounds.Width, Bounds.Height), _noSkia));
         Dispatcher.UIThread.InvokeAsync(InvalidateVisual, DispatcherPriority.Background);
+    }
+}
+
+class SceneDrawOperation : ICustomDrawOperation
+{
+    private List<DrawCommand> _drawCommands;
+    private SkiaRenderer _renderer;
+
+    private readonly IImmutableGlyphRunReference _noSkia;
+    public SceneDrawOperation(Rect bounds, SkiaRenderer renderer, List<DrawCommand> drawCommands)
+    {
+        Bounds = bounds;
+        _renderer = renderer;
+        _drawCommands = drawCommands;
+        
+        var text = "Current rendering API is not Skia";
+        var glyphs = text.Select(ch => Typeface.Default.GlyphTypeface.GetGlyph(ch)).ToArray();
+        _noSkia = new GlyphRun(Typeface.Default.GlyphTypeface, 12, text.AsMemory(), glyphs).TryCreateImmutableGlyphRunReference();;
+    }
+    public void Dispose() {}
+
+    public Rect Bounds { get; }
+    public bool HitTest(Point p) => false;
+    public bool Equals(ICustomDrawOperation other) => false;
+
+    public void Render(ImmediateDrawingContext context)
+    {
+        var leaseFeature = context.TryGetFeature(typeof(ISkiaSharpApiLeaseFeature)) as ISkiaSharpApiLeaseFeature;
+        if (leaseFeature == null)
+            context.DrawGlyphRun(Brushes.Black, _noSkia);
+        else
+        {
+            using var lease = leaseFeature.Lease();
+            var canvas = lease.SkCanvas;
+            canvas.Save();
+            
+            _renderer.BeginRender(canvas);
+            _renderer.Render(_drawCommands);
+            _renderer.EndRender();
+            canvas.Restore();
+        }
     }
 }
 

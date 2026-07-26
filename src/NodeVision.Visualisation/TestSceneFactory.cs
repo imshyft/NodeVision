@@ -13,7 +13,8 @@ namespace NodeVision.Visualisation
             {
                 Transform = new Transform
                 {
-                    Position = new Vector2(-400, -300)
+                    Position = new Vector2(-400, -300),
+                    Scale = new Vector2(100, 100)
                 },
                 Size = new Vector2(800, 600),
                 Colour = new Colour(30, 30, 30)
@@ -24,7 +25,8 @@ namespace NodeVision.Visualisation
             {
                 Transform = new Transform
                 {
-                    Position = new Vector2(100, 100)
+                    Position = new Vector2(0, 0),
+                    Scale = new Vector2(100, 100)
                 },
                 Size = new Vector2(300, 150),
                 Colour = new Colour(70, 120, 220)
@@ -35,7 +37,8 @@ namespace NodeVision.Visualisation
             {
                 Transform = new Transform
                 {
-                    Position = new Vector2(120, 140)
+                    Position = new Vector2(120, 140),
+                    Scale = new Vector2(100, 100)
                 },
                 Text = "NodeVision",
                 Colour = Colour.White
@@ -46,7 +49,8 @@ namespace NodeVision.Visualisation
             {
                 Transform = new Transform
                 {
-                    Position = new Vector2(550, 200)
+                    Position = new Vector2(550, 200),
+                    Scale = new Vector2(100, 100)
                 },
                 Radius = 60,
                 Colour = new Colour(220, 80, 80)
@@ -57,7 +61,8 @@ namespace NodeVision.Visualisation
             {
                 Transform = new Transform
                 {
-                    Position = new Vector2(500, 350)
+                    Position = new Vector2(500, 350),
+                    Scale = new Vector2(100, 100)
                 },
                 Size = new Vector2(250, 100),
                 Colour = new Colour(80, 180, 120)
@@ -67,7 +72,8 @@ namespace NodeVision.Visualisation
             {
                 Transform = new Transform
                 {
-                    Position = new Vector2(520, 390)
+                    Position = new Vector2(520, 390),
+                    Scale = new Vector2(100, 100)
                 },
                 Text = "Topic A",
                 Colour = Colour.White

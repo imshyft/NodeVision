@@ -1,3 +1,4 @@
+using NodeVision.Core;
 using NodeVision.Rendering.ObjectRenderInfo;
 using NodeVision.Rendering.Skia.ObjectRenderers;
 using SkiaSharp;
@@ -18,13 +19,22 @@ public class SkiaRenderer : Renderer
         _canvas = canvas;
     }
     
-    public override void Render(IReadOnlyList<RenderCommand> commands)
+    public override void Render(IReadOnlyList<RenderCommand> commands, RenderContext context)
     {
         if (_canvas == null)
         {
             throw new Exception("Failed to initialise canvas!");
         }
-        
+
+        _canvas.Save();
+
+        float cx = context.RenderTargetSize.X / 2f;
+        float cy = context.RenderTargetSize.Y / 2f;
+
+        _canvas.Translate(cx, cy);
+        _canvas.Scale(context.CameraZoom, context.CameraZoom);
+        _canvas.Translate(-context.CameraTranslation.X, -context.CameraTranslation.Y);
+
         foreach (var drawCommand in commands)
         {
             if (_objectRenderers.TryGetValue(drawCommand.GetType(), out var renderer))
@@ -32,6 +42,8 @@ public class SkiaRenderer : Renderer
                 renderer.DrawObject(drawCommand, _canvas);
             }
         }
+
+        _canvas.Restore();
     }
 
     public void EndRender()

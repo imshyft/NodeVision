@@ -22,6 +22,8 @@ public class SceneView : Control
     private readonly SkiaRenderer _renderer = new();
 
     public Scene? Scene { get; set; }
+    public Vector2 CameraTranslation { get; set; }
+    public float CameraZoom { get; set; } = 1f;
 
     public override void Render(DrawingContext context)
     {
@@ -32,11 +34,19 @@ public class SceneView : Control
 
         var commands = _renderBuilder.BuildScene(Scene);
 
+        var renderContext = new RenderContext
+        {
+            CameraTranslation = CameraTranslation,
+            CameraZoom = CameraZoom,
+            RenderTargetSize = new Vector2((float)Bounds.Width, (float)Bounds.Height)
+        };
+
         context.Custom(
             new SceneDrawOperation(
                 Bounds,
                 _renderer,
-                commands));
+                commands,
+                renderContext));
     }
 }
 
@@ -44,15 +54,18 @@ internal sealed class SceneDrawOperation : ICustomDrawOperation
 {
     private readonly SkiaRenderer _renderer;
     private readonly IReadOnlyList<RenderCommand> _commands;
+    private readonly RenderContext _renderContext;
 
     public SceneDrawOperation(
         Rect bounds,
         SkiaRenderer renderer,
-        IReadOnlyList<RenderCommand> commands)
+        IReadOnlyList<RenderCommand> commands,
+        RenderContext renderContext)
     {
         Bounds = bounds;
         _renderer = renderer;
         _commands = commands;
+        _renderContext = renderContext;
     }
 
     public Rect Bounds { get; }
@@ -75,7 +88,7 @@ internal sealed class SceneDrawOperation : ICustomDrawOperation
         using var lease = leaseFeature.Lease();
 
         _renderer.BeginRender(lease.SkCanvas);
-        _renderer.Render(_commands);
+        _renderer.Render(_commands, _renderContext);
         _renderer.EndRender();
     }
 }

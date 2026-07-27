@@ -9,7 +9,7 @@ namespace NodeVision.App.Views;
 
 public partial class MainWindow : Window
 {
-    private VisualizationEngine _visualisation = new VisualizationEngine();
+    private readonly VisualizationEngine _visualisation = new VisualizationEngine();
     
     public MainWindow()
     {
@@ -28,6 +28,9 @@ public partial class MainWindow : Window
         timer.Tick += (_, _) =>
         {
             _visualisation.Update(1f / 60f);
+
+            SceneViewControl.CameraTranslation = _visualisation.CameraPosition;
+            SceneViewControl.CameraZoom = _visualisation.CameraZoom;
 
             SceneViewControl.InvalidateVisual();
         };

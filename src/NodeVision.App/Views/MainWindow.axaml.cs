@@ -9,7 +9,7 @@ namespace NodeVision.App.Views;
 
 public partial class MainWindow : Window
 {
-    private VisualizationEngine visualisation = new VisualizationEngine();
+    private VisualizationEngine _visualisation = new VisualizationEngine();
     
     public MainWindow()
     {
@@ -18,7 +18,7 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        SceneViewControl.Scene = visualisation.Scene;
+        SceneViewControl.Scene = _visualisation.Scene;
         
         DispatcherTimer timer = new()
         {
@@ -27,7 +27,7 @@ public partial class MainWindow : Window
 
         timer.Tick += (_, _) =>
         {
-            visualisation.Update(1f / 60f);
+            _visualisation.Update(1f / 60f);
 
             SceneViewControl.InvalidateVisual();
         };

@@ -2,5 +2,5 @@ namespace NodeVision.Rendering;
 
 public abstract class Renderer
 {
-    public abstract void Render(IReadOnlyList<DrawCommand> commands);
+    public abstract void Render(IReadOnlyList<RenderCommand> commands);
 }

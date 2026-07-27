@@ -14,9 +14,9 @@ public class RenderBuilder
     // on render
     // loop through all
     // send commands to render backend
-    public List<DrawCommand> BuildScene(Scene scene)
+    public List<RenderCommand> BuildScene(Scene scene)
     {
-        var commands = new List<DrawCommand>();
+        var commands = new List<RenderCommand>();
         
         foreach (var sceneObject in scene.Objects)
         {

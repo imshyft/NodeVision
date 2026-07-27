@@ -5,10 +5,10 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public class RectangleDrawCommandBuilder : DrawCommandBuilder
 {
-    public override void BuildCommand(SceneObject sceneObject, List<DrawCommand> commands)
+    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands)
     {
         var rectangleObject = (RectangleObject)sceneObject;
-        commands.Add(new DrawRectangleCommand()
+        commands.Add(new RectangleRenderCommand()
         {
             Colour = rectangleObject.Colour,
             Position = rectangleObject.Transform.Position,

@@ -16,9 +16,19 @@
              to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:MainWindowViewModel/>
     </Design.DataContext>
-    
-    <controls:SceneView
-        x:Name="SceneViewControl"/>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="5*"/>
+        </Grid.ColumnDefinitions>
+        
+        <Border Background="SaddleBrown"></Border>
+        
+        <controls:SceneView
+            x:Name="SceneViewControl"
+            Grid.Column="1"/>
+    </Grid>    
+
 
     <!-- <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/> -->
 </Window>

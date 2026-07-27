@@ -10,7 +10,7 @@ public class SkiaRenderer : Renderer
     
     private Dictionary<Type, SkiaObjectRenderer> _objectRenderers = new()
     {
-        { typeof(DrawRectangleCommand), new RectangleRenderer() }
+        { typeof(RectangleRenderCommand), new RectangleRenderer() }
     };
 
     public void BeginRender(SKCanvas canvas)
@@ -18,7 +18,7 @@ public class SkiaRenderer : Renderer
         _canvas = canvas;
     }
     
-    public override void Render(IReadOnlyList<DrawCommand> commands)
+    public override void Render(IReadOnlyList<RenderCommand> commands)
     {
         if (_canvas == null)
         {

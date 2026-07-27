@@ -43,12 +43,12 @@ public class SceneView : Control
 internal sealed class SceneDrawOperation : ICustomDrawOperation
 {
     private readonly SkiaRenderer _renderer;
-    private readonly IReadOnlyList<DrawCommand> _commands;
+    private readonly IReadOnlyList<RenderCommand> _commands;
 
     public SceneDrawOperation(
         Rect bounds,
         SkiaRenderer renderer,
-        IReadOnlyList<DrawCommand> commands)
+        IReadOnlyList<RenderCommand> commands)
     {
         Bounds = bounds;
         _renderer = renderer;

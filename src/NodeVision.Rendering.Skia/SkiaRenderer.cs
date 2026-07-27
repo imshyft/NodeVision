@@ -18,7 +18,7 @@ public class SkiaRenderer : Renderer
         _canvas = canvas;
     }
     
-    public override void Render(List<DrawCommand> commands)
+    public override void Render(IReadOnlyList<DrawCommand> commands)
     {
         if (_canvas == null)
         {

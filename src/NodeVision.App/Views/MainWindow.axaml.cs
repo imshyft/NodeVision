@@ -1,5 +1,7 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using NodeVision.Core;
 using NodeVision.Visualisation;
 
@@ -7,7 +9,8 @@ namespace NodeVision.App.Views;
 
 public partial class MainWindow : Window
 {
-    private Scene scene;
+    private VisualizationEngine visualisation = new VisualizationEngine();
+    
     public MainWindow()
     {
         InitializeComponent();
@@ -15,7 +18,20 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        scene = TestSceneFactory.CreateScene();
-        SceneViewControl.SetScene(scene);
+        SceneViewControl.Scene = visualisation.Scene;
+        
+        DispatcherTimer timer = new()
+        {
+            Interval = TimeSpan.FromMilliseconds(16)
+        };
+
+        timer.Tick += (_, _) =>
+        {
+            visualisation.Update(1f / 60f);
+
+            SceneViewControl.InvalidateVisual();
+        };
+
+        timer.Start();
     }
 }

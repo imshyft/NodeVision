@@ -28,6 +28,9 @@ public class SkiaRenderer : Renderer
 
         _canvas.Save();
 
+        var clipRect = new SKRect(0, 0, context.RenderTargetSize.X, context.RenderTargetSize.Y);
+        _canvas.ClipRect(clipRect);
+
         float cx = context.RenderTargetSize.X / 2f;
         float cy = context.RenderTargetSize.Y / 2f;
 

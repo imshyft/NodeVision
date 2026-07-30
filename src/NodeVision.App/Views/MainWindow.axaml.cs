@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -31,7 +32,7 @@ public partial class MainWindow : Window
 
             SceneViewControl.CameraTranslation = _visualisation.CameraPosition;
             SceneViewControl.CameraZoom = _visualisation.CameraZoom;
-
+            
             SceneViewControl.InvalidateVisual();
         };
 

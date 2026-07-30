@@ -17,7 +17,7 @@ namespace NodeVision.Visualisation
                     Scale = new Vector2(100, 100)
                 },
                 Size = new Vector2(800, 600),
-                Colour = new Colour(30, 30, 30)
+                Colour = new Colour(0.30f, 0.30f, 0.30f)
             });
 
             // Main node
@@ -29,7 +29,7 @@ namespace NodeVision.Visualisation
                     Scale = new Vector2(100, 100)
                 },
                 Size = new Vector2(300, 150),
-                Colour = new Colour(70, 120, 220)
+                Colour = new Colour(0.70f, 0.120f, 0.220f)
             });
 
             // Title
@@ -41,7 +41,7 @@ namespace NodeVision.Visualisation
                     Scale = new Vector2(100, 100)
                 },
                 Text = "NodeVision",
-                Colour = Colour.White
+                Colour = Colour.Green
             });
 
             // Decorative circle
@@ -53,7 +53,7 @@ namespace NodeVision.Visualisation
                     Scale = new Vector2(100, 100)
                 },
                 Radius = 60,
-                Colour = new Colour(220, 80, 80)
+                Colour = Colour.Green
             });
 
             // Second node
@@ -62,10 +62,10 @@ namespace NodeVision.Visualisation
                 Transform = new Transform
                 {
                     Position = new Vector2(500, 350),
-                    Scale = new Vector2(100, 100)
+                    Scale = new Vector2(1000, 100)
                 },
                 Size = new Vector2(250, 100),
-                Colour = new Colour(80, 180, 120)
+                Colour = Colour.Blue
             });
 
             scene.AddObject(new TextObject
@@ -76,7 +76,7 @@ namespace NodeVision.Visualisation
                     Scale = new Vector2(100, 100)
                 },
                 Text = "Topic A",
-                Colour = Colour.White
+                Colour = Colour.Red
             });
 
             return scene;

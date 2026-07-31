@@ -27,6 +27,8 @@
 
     <ItemGroup>
       <ProjectReference Include="..\NodeVision.Core\NodeVision.Core.csproj" />
+      <ProjectReference Include="..\NodeVision.Rendering.Skia\NodeVision.Rendering.Skia.csproj" />
       <ProjectReference Include="..\NodeVision.Rendering\NodeVision.Rendering.csproj" />
+      <ProjectReference Include="..\NodeVision.Visualisation\NodeVision.Visualisation.csproj" />
     </ItemGroup>
 </Project>

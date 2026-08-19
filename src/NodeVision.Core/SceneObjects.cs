@@ -26,6 +26,7 @@ namespace NodeVision.Core
 
     public abstract class SceneObject
     {
+        public string Id { get; set; } = string.Empty;
         public Transform Transform { get; set; } = Transform.Identity;
     }
 

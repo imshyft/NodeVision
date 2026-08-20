@@ -46,4 +46,10 @@ namespace NodeVision.Core
         public float Radius { get; set; }
         public Colour Colour { get; set; }
     }
+
+    public class ImageObject : SceneObject
+    {
+        public string FilePath { get; set; } = "";
+        public Vector2 Size { get; set; }
+    }
 }

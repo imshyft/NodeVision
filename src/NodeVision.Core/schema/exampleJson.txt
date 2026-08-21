@@ -1,0 +1,30 @@
+﻿{
+  "version": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "name": "Node A",
+      "info": "Some information",
+      "position": {
+        "x": 100,
+        "y": 150
+      }
+    },
+    {
+      "id": 2,
+      "name": "Node B",
+      "info": "More information",
+      "position": {
+        "x": 350,
+        "y": 150
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": 1,
+      "parentNodeId": 1,
+      "childNodeId": 2
+    }
+  ]
+}

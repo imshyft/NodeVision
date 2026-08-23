@@ -14,4 +14,8 @@
       <ProjectReference Include="..\NodeVision.Rendering\NodeVision.Rendering.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Assets\" />
+    </ItemGroup>
+
 </Project>

@@ -23,8 +23,8 @@ public class VisualizationEngine
         _time += deltaTime;
 
         float t = _time;
-        CameraPosition = new Vector2(MathF.Sin(t) * 100, MathF.Cos(t) * 100);
-        CameraZoom = 1f + MathF.Sin(t * 0.5f) * 0.3f;
+        CameraPosition = new Vector2(MathF.Sin(t*5) * 100, MathF.Cos(t*5) * 100);
+        CameraZoom = 1f + MathF.Sin(t * 2f) * 0.3f;
 
         foreach (var obj in Scene.Objects)
         {

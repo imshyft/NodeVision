@@ -41,7 +41,7 @@ namespace NodeVision.Visualisation
                 Transform = new Transform
                 {
                     Position = new Vector2(120, 140),
-                    Scale = new Vector2(100, 100)
+                    Scale = new Vector2(1, 28)
                 },
                 Text = "NodeVision",
                 Colour = Colour.Green
@@ -79,10 +79,21 @@ namespace NodeVision.Visualisation
                 Transform = new Transform
                 {
                     Position = new Vector2(520, 390),
-                    Scale = new Vector2(100, 100)
+                    Scale = new Vector2(1, 20)
                 },
                 Text = "Topic A",
                 Colour = Colour.Red
+            });
+            
+            scene.AddObject(new ImageObject
+            {
+                Transform = new Transform
+                {
+                    Position = new Vector2(200, 200),
+                    Scale = Vector2.One
+                },
+                FilePath = "Assets/test-image.png",
+                Size = new Vector2(128, 128)
             });
 
             return scene;

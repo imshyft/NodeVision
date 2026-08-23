@@ -11,6 +11,7 @@ namespace NodeVision.Visualisation
             // Background
             scene.AddObject(new RectangleObject
             {
+                Id = "background",
                 Transform = new Transform
                 {
                     Position = new Vector2(-400, -300),
@@ -23,6 +24,7 @@ namespace NodeVision.Visualisation
             // Main node
             scene.AddObject(new RectangleObject
             {
+                Id = "node.main",
                 Transform = new Transform
                 {
                     Position = new Vector2(0, 0),
@@ -35,6 +37,7 @@ namespace NodeVision.Visualisation
             // Title
             scene.AddObject(new TextObject
             {
+                Id = "node.main.title",
                 Transform = new Transform
                 {
                     Position = new Vector2(120, 140),
@@ -47,6 +50,7 @@ namespace NodeVision.Visualisation
             // Decorative circle
             scene.AddObject(new CircleObject
             {
+                Id = "node.decorative-circle",
                 Transform = new Transform
                 {
                     Position = new Vector2(550, 200),
@@ -59,6 +63,7 @@ namespace NodeVision.Visualisation
             // Second node
             scene.AddObject(new RectangleObject
             {
+                Id = "node.topicA",
                 Transform = new Transform
                 {
                     Position = new Vector2(500, 350),
@@ -70,6 +75,7 @@ namespace NodeVision.Visualisation
 
             scene.AddObject(new TextObject
             {
+                Id = "node.topicA.title",
                 Transform = new Transform
                 {
                     Position = new Vector2(520, 390),

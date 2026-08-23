@@ -47,6 +47,12 @@ namespace NodeVision.Core
         public Colour Colour { get; set; }
     }
 
+    public class ImageObject : SceneObject
+    {
+        public string FilePath { get; set; } = "";
+        public Vector2 Size { get; set; }
+    }    
+        
     public class Node : SceneObject
     {
         public int Id { get; set; }

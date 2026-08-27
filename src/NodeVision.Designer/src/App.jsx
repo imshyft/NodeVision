@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { ReactFlow, addEdge, applyNodeChanges, applyEdgeChanges, Background, Controls, Panel, useEdgesState, useNodesState } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import Node from './ui/Node'; // The component from the previous step
+import Dropdown from './ui/Dropdown';
+import {uploadFileFallback, downloadFileFallback} from './utils'
+
 
 // Register custom nodes
 const nodeTypes = { sphere: Node };
@@ -48,13 +51,78 @@ export default function App() {
     });
   }, [setNodes]);
 
-  useEffect(() => {
-    console.log("Nodes updated");
-    console.log(nodes)
-  }, [nodes]);
+  // useEffect(() => {
+  //   console.log("Nodes updated");
+  //   console.log(nodes)
+  // }, [nodes]);
+
+  const onExport = async () => {
+    const payload = {
+      nodes: nodes,
+      edges: edges
+    } 
+    const fileContent = JSON.stringify(payload, null, 2);
+    if (window.electronAPI) {
+      const result = await window.electronAPI.saveFile({
+        data: fileContent,
+        filename: 'export.json',
+        extension: 'json'
+      });
+
+      if (result.success) {
+        console.log('Exported to: ', result.filePath);
+      } else {
+        console.log('Export failed: ', result.error || result.message);
+      }
+    } else {
+      downloadFileFallback(fileContent, 'project-export.json', 'application/json');
+    }
+  }
+
+  const onImport = async () => {
+    if (window.electronAPI) {
+      const result = await window.electronAPI.loadFile({extensions: ['json']});
+      
+      if (result.success) {
+        try {
+          const parsedData = JSON.parse(result.data);
+          if (parsedData.nodes) {
+            // console.log(parsedData)
+            setNodes(parsedData.nodes);
+          }
+          if (parsedData.edges) {
+            setEdges(parsedData.edges);
+          }
+          console.log("Loaded Successfully")
+        } catch (err) {
+          alert("Failed to parse JSON File: Invalid Format");
+        }
+      } 
+    } else {
+      // console.log("Upload fallback called");
+      uploadFileFallback((fileContent) => {
+        const parsedData = JSON.parse(fileContent);
+        setNodes(parsedData.nodes || []);
+      })
+    }
+  }
+  
+
+  const menuActions = [
+    {
+      id: 1,
+      label: "Export File",
+      action: onExport
+    },
+    {
+      id: 2,
+      label: "Import File",
+      action: onImport
+    }
+  ];
 
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: '#1a1a2e' }}>
+    <div style={{ width: '100%', height: '100%', backgroundColor: '#1a1a2e'}}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -65,18 +133,23 @@ export default function App() {
         fitView
       >
         <Panel position='top-left'>
+          <div style={{display: 'flex', gap: '8px'}}>
+            <Dropdown 
+              items={menuActions}
+            >
+
+            </Dropdown>
             <button
+
             onClick={onAddNode}
-            style={{
-                padding: '8px 16px',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-            }}
+              className='dropdown-button'
+              style={{
+                  minWidth: 'auto'
+              }}
             >
                 Add Node
             </button>
+          </div>
         </Panel>
         <Background color="#ccc" gap={16} />
         <Controls />

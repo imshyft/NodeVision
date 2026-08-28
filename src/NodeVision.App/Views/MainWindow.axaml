@@ -4,31 +4,75 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:controls="clr-namespace:NodeVision.App.Controls"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d"
+        d:DesignWidth="800"
+        d:DesignHeight="450"
         x:Class="NodeVision.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Loaded="OnLoaded"
-        Title="NodeVision.App">
+        Loaded="OnWindowLoaded"
+        Title="NodeVision">
 
     <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:MainWindowViewModel/>
     </Design.DataContext>
+
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="5*"/>
-        </Grid.ColumnDefinitions>
-        
-        <Border Background="SaddleBrown" Grid.Column="0"></Border>
-        
+
+        <!-- Gray placeholder shown before a camera is selected -->
+        <Border x:Name="CameraPlaceholder"
+                Background="Gray"/>
+
+        <!-- Main camera / scene view.
+             Hidden until the user selects a camera. -->
         <controls:SceneView
             x:Name="SceneViewControl"
-            Grid.Column="1"/>
-    </Grid>    
+            IsVisible="False"/>
 
+        <!-- Camera selection overlay -->
+        <Border x:Name="CameraSelectionOverlay"
+                Background="#66000000">
 
-    <!-- <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/> -->
+            <Border Width="360"
+                    Padding="24"
+                    CornerRadius="10"
+                    Background="#2B2B2B"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+
+                <StackPanel Spacing="16">
+
+                    <TextBlock Text="Select Camera"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               HorizontalAlignment="Center"/>
+
+                    <TextBlock Text="Choose the camera you want NodeVision to use."
+                               Foreground="LightGray"
+                               TextWrapping="Wrap"
+                               HorizontalAlignment="Center"/>
+
+                    <ComboBox x:Name="CameraDeviceComboBox"
+                              PlaceholderText="Select a camera..."
+                              SelectionChanged="OnCameraSelectionChanged"/>
+
+                    <TextBlock x:Name="CameraStatusText"
+                               Foreground="LightGray"
+                               TextWrapping="Wrap"
+                               HorizontalAlignment="Center"/>
+
+                    <Button x:Name="ConfirmCameraButton"
+                            Content="OK"
+                            IsEnabled="False"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Click="OnConfirmCameraClick"/>
+
+                </StackPanel>
+
+            </Border>
+        </Border>
+
+    </Grid>
 </Window>

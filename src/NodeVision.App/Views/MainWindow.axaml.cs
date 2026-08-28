@@ -1,6 +1,8 @@
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Selection;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using NodeVision.Core;
@@ -11,69 +13,171 @@ namespace NodeVision.App.Views;
 
 public partial class MainWindow : Window
 {
-    private readonly VisualizationEngine _visualisation = new VisualizationEngine();
-    private readonly WebcamCaptureService _webcamCapture;
-    private readonly WebcamFrameRingBuffer _ringBuffer = new(4);
-    
+    private readonly VisualizationEngine _visualizationEngine = new();
+    private readonly WebcamFrameRingBuffer _webcamFrameBuffer = new(4);
+
+    private WebcamCaptureService? _webcamCaptureService;
+    private DispatcherTimer? _renderTimer;
+
     public MainWindow()
     {
         InitializeComponent();
-        
-        // load webcam
-        _webcamCapture = new WebcamCaptureService(
-            new CaptureConfig(DeviceIndex: 3, Width: 1280, Height: 720, Fps: 30),
-            _ringBuffer);
-        
-        _webcamCapture.Events.FrameCaptured += OnWebcamFrameCaptured;
-        _webcamCapture.Events.Error += OnWebcamError;
-        _webcamCapture.Events.Started += () => Console.WriteLine("[Webcam] Started");
-        _webcamCapture.Events.Stopped += () => Console.WriteLine("[Webcam] Stopped");
-        
-        SceneViewControl.SetWebcamSource(_ringBuffer);
+
+        SceneViewControl.SetWebcamSource(_webcamFrameBuffer);
     }
 
-    private void OnLoaded(object? sender, RoutedEventArgs e)
+    private void OnWindowLoaded(object? sender, RoutedEventArgs e)
     {
-        SceneViewControl.Scene = _visualisation.Scene;
-        
-        _ = _webcamCapture.StartAsync();
-        
-        DispatcherTimer timer = new()
+        SceneViewControl.Scene = _visualizationEngine.Scene;
+
+        LoadAvailableCameras();
+        StartRenderLoop();
+    }
+
+    private void LoadAvailableCameras()
+    {
+        //Camera Device Option found in Core
+        IReadOnlyList<CameraDeviceOption> availableCameras =
+            GetAvailableCameraDevices();
+
+        CameraDeviceComboBox.ItemsSource = availableCameras;
+
+        if (availableCameras.Count == 0)
+        {
+            CameraStatusText.Text = "No cameras were detected.";
+            ConfirmCameraButton.IsEnabled = false;
+        }
+        else
+        {
+            CameraStatusText.Text = "Select a camera to continue.";
+        }
+    }
+
+    private void OnCameraSelectionChanged(
+        object? sender,
+        SelectionChangedEventArgs e)
+    {
+        ConfirmCameraButton.IsEnabled =
+            CameraDeviceComboBox.SelectedItem is CameraDeviceOption;
+    }
+
+    private async void OnConfirmCameraClick(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        if (CameraDeviceComboBox.SelectedItem is not CameraDeviceOption selectedCamera)
+        {
+            return;
+        }
+
+        ConfirmCameraButton.IsEnabled = false;
+        CameraDeviceComboBox.IsEnabled = false;
+        CameraStatusText.Text = $"Starting {selectedCamera.DisplayName}...";
+
+        try
+        {
+            await StartSelectedCameraAsync(selectedCamera);
+
+            CameraPlaceholder.IsVisible = false;
+            CameraSelectionOverlay.IsVisible = false;
+            SceneViewControl.IsVisible = true;
+        }
+        catch (Exception ex)
+        {
+            CameraStatusText.Text = $"Unable to start camera: {ex.Message}";
+
+            CameraDeviceComboBox.IsEnabled = true;
+            ConfirmCameraButton.IsEnabled = true;
+        }
+    }
+
+    private async Task StartSelectedCameraAsync(CameraDeviceOption selectedCamera)
+    {
+        _webcamCaptureService?.Dispose();
+
+        _webcamCaptureService = new WebcamCaptureService(
+            new CaptureConfig(
+                DeviceIndex: selectedCamera.DeviceIndex,
+                Width: 1280,
+                Height: 720,
+                Fps: 30),
+            _webcamFrameBuffer);
+
+        _webcamCaptureService.Events.FrameCaptured += OnWebcamFrameCaptured;
+        _webcamCaptureService.Events.Error += OnWebcamError;
+        _webcamCaptureService.Events.Started += OnWebcamStarted;
+        _webcamCaptureService.Events.Stopped += OnWebcamStopped;
+
+        await _webcamCaptureService.StartAsync();
+    }
+
+    private void StartRenderLoop()
+    {
+        _renderTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(16)
         };
 
-        timer.Tick += (_, _) =>
+        _renderTimer.Tick += OnRenderTimerTick;
+        _renderTimer.Start();
+    }
+
+    private void OnRenderTimerTick(object? sender, EventArgs e)
+    {
+        _visualizationEngine.Update(1f / 60f);
+
+        SceneViewControl.CameraTranslation =
+            _visualizationEngine.CameraPosition;
+
+        SceneViewControl.CameraZoom =
+            _visualizationEngine.CameraZoom;
+
+        if (_webcamCaptureService is not null)
         {
-            _visualisation.Update(1f / 60f);
-
-            SceneViewControl.CameraTranslation = _visualisation.CameraPosition;
-            SceneViewControl.CameraZoom = _visualisation.CameraZoom;
-            
             SceneViewControl.UpdateWebcamFrame();
-            
-            // force updates control
-            SceneViewControl.InvalidateVisual();
-        };
+        }
 
-        timer.Start();
+        SceneViewControl.InvalidateVisual();
     }
 
     private void OnWebcamFrameCaptured(WebcamFrame frame)
     {
-        // callback on capture thread
-        // Console.WriteLine($"[Webcam] Frame: {frame.Width}x{frame.Height} @ {frame.Timestamp}");
+        // Runs on the webcam capture thread.
+        // Frame data is already being placed into the ring buffer.
     }
 
-    private void OnWebcamError(Exception ex)
+    private void OnWebcamStarted()
     {
-        Console.WriteLine($"[Webcam] Error: {ex.Message}");
+        Console.WriteLine("[Webcam] Started");
+    }
+
+    private void OnWebcamStopped()
+    {
+        Console.WriteLine("[Webcam] Stopped");
+    }
+
+    private void OnWebcamError(Exception exception)
+    {
+        Console.WriteLine($"[Webcam] Error: {exception.Message}");
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        _renderTimer?.Stop();
+
+        _webcamCaptureService?.Dispose();
+        _webcamFrameBuffer.Dispose();
+
         base.OnClosed(e);
-        _webcamCapture.Dispose();
-        _ringBuffer.Dispose();
+    }
+    
+    private IReadOnlyList<CameraDeviceOption> GetAvailableCameraDevices()
+    {
+        return new List<CameraDeviceOption>
+        {
+            new(0, "Camera 1"),
+            new(1, "Camera 2"),
+            new(2, "Camera 3")
+        };
     }
 }

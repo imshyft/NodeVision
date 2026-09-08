@@ -45,21 +45,21 @@
         "name": {
           "type": "string"
         },
-
-        "info": {
-          "type": "string"
-        },
-
+        
         "position": {
           "$ref": "#/$defs/position"
+        },
+
+        "content": {
+          "$ref": "#/$defs/content"
         }
       },
 
       "required": [
         "id",
         "name",
-        "info",
-        "position"
+        "position",
+        "content"
       ],
 
       "additionalProperties": false
@@ -84,6 +84,42 @@
       ],
 
       "additionalProperties": false
+    },
+
+    "content": {
+      "type": "object",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      ]
     },
 
     "connection": {

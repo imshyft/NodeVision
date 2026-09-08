@@ -50,15 +50,33 @@ namespace NodeVision.Core
     public class Node : SceneObject
     {
         public int Id { get; set; }
-        public string NodeName { get; set; }
-        public string Info { get; set; }
+        public string NodeName { get; set; } = string.Empty;
         public Vector2 Position { get; set; }
+        public NodeContent Content { get; set; } = new TextContent();
     }
+    
+    public abstract class NodeContent
+    {
+    }
+
+    public class TextContent : NodeContent
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+    public class ImageContent : NodeContent
+    {
+        public string FilePath { get; set; } = string.Empty;
+    }
+
 
     public class Connection : SceneObject
     {
         public int Id { get; set; }
-        private Node ParentNode { get; set; }
-        private Node ChildNode { get; set; }
+        public int ParentNodeId { get; set; }
+        public int ChildNodeId { get; set; }
+        // Resolved after loading
+        public Node? ParentNode { get; set; }
+        public Node? ChildNode { get; set; }
     }
 }

@@ -34,6 +34,16 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
+        /* Scene loadedScene = ProjectLoader.Load("project.json");
+
+        _visualisation.Scene.ClearObjects();
+
+        foreach (SceneObject sceneObject in loadedScene.Objects)
+        {
+            _visualisation.Scene.AddObject(sceneObject);
+        }
+        */
+        
         SceneViewControl.Scene = _visualisation.Scene;
         
         _ = _webcamCapture.StartAsync();

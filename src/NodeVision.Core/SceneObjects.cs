@@ -1,6 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Drawing;
-using System.Numerics;
 
 namespace NodeVision.Core
 {
@@ -43,7 +41,7 @@ namespace NodeVision.Core
     }
 
     public class CircleObject : SceneObject
-    {   
+    {
         public float Radius { get; set; }
         public Colour Colour { get; set; }
     }
@@ -52,14 +50,13 @@ namespace NodeVision.Core
     {
         public string FilePath { get; set; } = "";
         public Vector2 Size { get; set; }
-    }    
-        
+    }
+
     public class Node : SceneObject
     {
-        public int Id { get; set; }
-        public string NodeName { get; set; }
-        public string Info { get; set; }
-        public Vector2 Position { get; set; }
+        public string Header { get; set; } = string.Empty;
+        public string Body { get; set; } = string.Empty;
+        public Vector2 Size { get; set; }
     }
 
     public class Connection : SceneObject

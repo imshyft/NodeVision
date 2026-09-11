@@ -8,4 +8,7 @@ public sealed class TextRenderCommand : RenderCommand, IRenderable
     public Colour Colour { get; init; }
     public Vector2 Position { get; init; }
     public Vector2 Size { get; init; }
+    public float MaxWidth { get; init; }
+    public float LineSpacing { get; init; } = 1.35f;
+    public TextAnchor Anchor { get; init; }
 }

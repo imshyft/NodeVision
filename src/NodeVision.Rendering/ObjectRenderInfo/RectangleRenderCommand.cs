@@ -7,5 +7,6 @@ namespace NodeVision.Rendering.ObjectRenderInfo
         public Colour Colour { get; init; }
         public Vector2 Position { get; init; }
         public Vector2 Size { get; init; }
+        public float CornerRadius { get; init; }
     }
 }

@@ -8,7 +8,6 @@ namespace NodeVision.Visualisation
         {
             var scene = new Scene();
 
-            // Background
             scene.AddObject(new RectangleObject
             {
                 Id = "background",
@@ -21,33 +20,32 @@ namespace NodeVision.Visualisation
                 Colour = new Colour(0.30f, 0.30f, 0.30f)
             });
 
-            // Main node
-            scene.AddObject(new RectangleObject
+            scene.AddObject(new Node
             {
                 Id = "node.main",
                 Transform = new Transform
                 {
                     Position = new Vector2(0, 0),
-                    Scale = new Vector2(100, 100)
+                    Scale = Vector2.One
                 },
-                Size = new Vector2(300, 150),
-                Colour = new Colour(0.70f, 0.120f, 0.220f)
+                Size = new Vector2(340, 180),
+                Header = "NodeVision",
+                Body = "Gesture driven spatial presentation canvas. Navigate ideas in space instead of stepping through slides."
             });
 
-            // Title
-            scene.AddObject(new TextObject
+            scene.AddObject(new Node
             {
-                Id = "node.main.title",
+                Id = "node.topicA",
                 Transform = new Transform
                 {
-                    Position = new Vector2(120, 140),
-                    Scale = new Vector2(1, 28)
+                    Position = new Vector2(420, 140),
+                    Scale = Vector2.One
                 },
-                Text = "NodeVision",
-                Colour = Colour.Green
+                Size = new Vector2(320, 160),
+                Header = "Semantic zoom",
+                Body = "Overview shows structure and relationships. Detail appears only as the presenter zooms in."
             });
 
-            // Decorative circle
             scene.AddObject(new CircleObject
             {
                 Id = "node.decorative-circle",
@@ -60,31 +58,6 @@ namespace NodeVision.Visualisation
                 Colour = Colour.Green
             });
 
-            // Second node
-            scene.AddObject(new RectangleObject
-            {
-                Id = "node.topicA",
-                Transform = new Transform
-                {
-                    Position = new Vector2(500, 350),
-                    Scale = new Vector2(1000, 100)
-                },
-                Size = new Vector2(250, 100),
-                Colour = Colour.Blue
-            });
-
-            scene.AddObject(new TextObject
-            {
-                Id = "node.topicA.title",
-                Transform = new Transform
-                {
-                    Position = new Vector2(520, 390),
-                    Scale = new Vector2(1, 20)
-                },
-                Text = "Topic A",
-                Colour = Colour.Red
-            });
-            
             scene.AddObject(new ImageObject
             {
                 Transform = new Transform

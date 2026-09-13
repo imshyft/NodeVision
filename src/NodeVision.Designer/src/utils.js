@@ -32,7 +32,83 @@ function uploadFileFallback(onFileLoaded) {
   input.click();
 }
 
+function convertReactFlowToSaveFile(flow, version = 1) {
+  const nodeIdMap = new Map();
+
+  const nodes = (flow.nodes || []).map((node, index) => {
+    // Convert string IDs to integers; fallback to sequential index if non-numeric
+    const numericId = Number.isInteger(Number(node.id))
+      ? parseInt(node.id, 10)
+      : index + 1;
+
+    nodeIdMap.set(node.id, numericId);
+
+    const label = node.data?.label ?? `Node ${numericId}`;
+
+    return {
+      id: numericId,
+      name: label,
+      position: {
+        x: Number(node.position.x),
+        y: Number(node.position.y),
+      },
+      content: {
+        type: "text",
+        value: label,
+      },
+    };
+  });
+
+  const connections = (flow.edges || []).map((edge, index) => {
+    const parentNodeId = nodeIdMap.has(edge.source)
+      ? nodeIdMap.get(edge.source)
+      : parseInt(edge.source, 10);
+
+    const childNodeId = nodeIdMap.has(edge.target)
+      ? nodeIdMap.get(edge.target)
+      : parseInt(edge.target, 10);
+
+    return {
+      id: index + 1,
+      parentNodeId,
+      childNodeId,
+    };
+  });
+
+  return {
+    version,
+    nodes,
+    connections,
+  };
+}
+
+function convertSaveFileToReactFlow(saveFile, nodeType = "sphere") {
+  const nodes = (saveFile.nodes || []).map((node) => ({
+    id: String(node.id),
+    type: nodeType,
+    position: {
+      x: node.position.x,
+      y: node.position.y,
+    },
+    data: {
+      label: node.name,
+      content: node.content,
+    },
+  }));
+
+  const edges = (saveFile.connections || []).map((conn) => ({
+    id: `xy-edge__${conn.parentNodeId}-${conn.childNodeId}`,
+    source: String(conn.parentNodeId),
+    target: String(conn.childNodeId),
+    animated: true,
+  }));
+
+  return { nodes, edges };
+}
+
 export {
     uploadFileFallback,
-    downloadFileFallback
+    downloadFileFallback,
+    convertSaveFileToReactFlow,
+    convertReactFlowToSaveFile
 }

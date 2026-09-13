@@ -3,7 +3,8 @@ import { ReactFlow, addEdge, applyNodeChanges, applyEdgeChanges, Background, Con
 import '@xyflow/react/dist/style.css';
 import Node from './ui/Node'; // The component from the previous step
 import Dropdown from './ui/Dropdown';
-import {uploadFileFallback, downloadFileFallback} from './utils'
+import PropertyPanel from './ui/PropertyPanel';
+import {uploadFileFallback, downloadFileFallback, convertReactFlowToSaveFile, convertSaveFileToReactFlow} from './utils'
 
 
 // Register custom nodes
@@ -22,7 +23,7 @@ const initialEdges = [
 export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [idTracker, setIdTracker] = useState(1); 
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
 
   // const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
   // const onEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
@@ -51,16 +52,40 @@ export default function App() {
     });
   }, [setNodes]);
 
-  // useEffect(() => {
-  //   console.log("Nodes updated");
-  //   console.log(nodes)
-  // }, [nodes]);
+  const onNodeClick = useCallback((_, node) => {
+    setSelectedNodeId(node.id);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+  }, []);
+
+  const onUpdateNode = useCallback((id, updates) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id !== id) return node;
+        return {
+          ...node,
+          ...updates,
+          position: updates.position ? { ...node.position, ...updates.position } : node.position,
+          data: updates.data ? { ...node.data, ...updates.data } : node.data,
+        };
+      })
+    );
+  }, [setNodes]);
+
+  // Remove node and dependent edges
+  const onDeleteNode = useCallback((id) => {
+    setNodes((nds) => nds.filter((node) => node.id !== id));
+    setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
+    setSelectedNodeId(null);
+  }, [setNodes, setEdges]);
 
   const onExport = async () => {
-    const payload = {
+    const payload = convertReactFlowToSaveFile({
       nodes: nodes,
       edges: edges
-    } 
+    }) 
     const fileContent = JSON.stringify(payload, null, 2);
     if (window.electronAPI) {
       const result = await window.electronAPI.saveFile({
@@ -86,12 +111,13 @@ export default function App() {
       if (result.success) {
         try {
           const parsedData = JSON.parse(result.data);
-          if (parsedData.nodes) {
-            // console.log(parsedData)
-            setNodes(parsedData.nodes);
+          const flowData = convertSaveFileToReactFlow(parsedData);
+          if (flowData.nodes) {
+            // console.log(flowData)
+            setNodes(flowData.nodes);
           }
-          if (parsedData.edges) {
-            setEdges(parsedData.edges);
+          if (flowData.edges) {
+            setEdges(flowData.edges);
           }
           console.log("Loaded Successfully")
         } catch (err) {
@@ -102,7 +128,9 @@ export default function App() {
       // console.log("Upload fallback called");
       uploadFileFallback((fileContent) => {
         const parsedData = JSON.parse(fileContent);
-        setNodes(parsedData.nodes || []);
+        const flowData = convertSaveFileToReactFlow(parsedData);
+        setNodes(flowData.nodes || []);
+        setEdges(flowData.edges || []);
       })
     }
   }
@@ -122,38 +150,51 @@ export default function App() {
   ];
 
   return (
-    <div style={{ width: '100%', height: '100%', backgroundColor: '#1a1a2e'}}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        fitView
-      >
-        <Panel position='top-left'>
-          <div style={{display: 'flex', gap: '8px'}}>
-            <Dropdown 
-              items={menuActions}
-            >
+    <div style={{ width: '100vw', height: '100vh', position: "relative", overflow: 'hidden', backgroundColor: '#1a1a2e' }}>
+      <div style={{ width: '100%', height: '100%', backgroundColor: '#1a1a2e'}}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onConnect={onConnect}
+          fitView
+        >
+          <Panel position='top-left'>
+            <div style={{display: 'flex', gap: '8px'}}>
+              <Dropdown 
+                items={menuActions}
+              >
 
-            </Dropdown>
-            <button
+              </Dropdown>
+              <button
 
-            onClick={onAddNode}
-              className='dropdown-button'
-              style={{
-                  minWidth: 'auto'
-              }}
-            >
-                Add Node
-            </button>
-          </div>
-        </Panel>
-        <Background color="#ccc" gap={16} />
-        <Controls />
-      </ReactFlow>
+              onClick={onAddNode}
+                className='dropdown-button'
+                style={{
+                    minWidth: 'auto'
+                }}
+              >
+                  Add Node
+              </button>
+            </div>
+          </Panel>
+          <Background color="#ccc" gap={16} />
+          <Controls />
+        </ReactFlow>
+      </div>
+
+      {selectedNodeId && (
+          <PropertyPanel
+            selectedNode={nodes.find((node) => node.id == selectedNodeId)}
+            onUpdateNode={onUpdateNode}
+            onDeleteNode={onDeleteNode}
+            onClose={() => setSelectedNodeId(null)}
+          />
+      )}
     </div>
   );
 }

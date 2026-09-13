@@ -11,7 +11,9 @@ public class SkiaRenderer : Renderer
     
     private Dictionary<Type, SkiaObjectRenderer> _objectRenderers = new()
     {
-        { typeof(RectangleRenderCommand), new RectangleRenderer() }
+        { typeof(RectangleRenderCommand), new RectangleRenderer() },
+        { typeof(TextRenderCommand), new TextRenderer() },
+        { typeof(ImageRenderCommand), new ImageRenderer() }
     };
 
     public void BeginRender(SKCanvas canvas)

@@ -8,7 +8,9 @@ public class RenderBuilder
 {
     private readonly Dictionary<Type, DrawCommandBuilder> _builders = new()
     {
-        { typeof(RectangleObject), new RectangleDrawCommandBuilder() }
+        { typeof(RectangleObject), new RectangleDrawCommandBuilder() },
+        { typeof(TextObject), new TextDrawCommandBuilder() },
+        { typeof(ImageObject), new ImageDrawCommandBuilder() }
     };
     
     // on render

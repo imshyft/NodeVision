@@ -1,0 +1,115 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NodeVision Save File",
+  "description": "Schema for a NodeVision project save file.",
+  "type": "object",
+
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+
+    "connections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/connection"
+      }
+    }
+  },
+
+  "required": [
+    "version",
+    "nodes",
+    "connections"
+  ],
+
+  "additionalProperties": false,
+
+  "$defs": {
+    "node": {
+      "type": "object",
+
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+
+        "name": {
+          "type": "string"
+        },
+
+        "info": {
+          "type": "string"
+        },
+
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      },
+
+      "required": [
+        "id",
+        "name",
+        "info",
+        "position"
+      ],
+
+      "additionalProperties": false
+    },
+
+    "position": {
+      "type": "object",
+
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+
+        "y": {
+          "type": "number"
+        }
+      },
+
+      "required": [
+        "x",
+        "y"
+      ],
+
+      "additionalProperties": false
+    },
+
+    "connection": {
+      "type": "object",
+
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+
+        "parentNodeId": {
+          "type": "integer"
+        },
+
+        "childNodeId": {
+          "type": "integer"
+        }
+      },
+
+      "required": [
+        "id",
+        "parentNodeId",
+        "childNodeId"
+      ],
+
+      "additionalProperties": false
+    }
+  }
+}

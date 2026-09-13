@@ -10,6 +10,7 @@
         <ProjectReference Include="..\NodeVision.Core\NodeVision.Core.csproj" />
         <PackageReference Include="OpenCvSharp4" Version="4.10.0.20241108" />
         <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20241108" />
+        <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
     </ItemGroup>
 
 </Project>

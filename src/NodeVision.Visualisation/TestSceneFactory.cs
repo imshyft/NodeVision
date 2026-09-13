@@ -11,6 +11,7 @@ namespace NodeVision.Visualisation
             // Background
             scene.AddObject(new RectangleObject
             {
+                Id = "background",
                 Transform = new Transform
                 {
                     Position = new Vector2(-400, -300),
@@ -23,6 +24,7 @@ namespace NodeVision.Visualisation
             // Main node
             scene.AddObject(new RectangleObject
             {
+                Id = "node.main",
                 Transform = new Transform
                 {
                     Position = new Vector2(0, 0),
@@ -35,10 +37,11 @@ namespace NodeVision.Visualisation
             // Title
             scene.AddObject(new TextObject
             {
+                Id = "node.main.title",
                 Transform = new Transform
                 {
                     Position = new Vector2(120, 140),
-                    Scale = new Vector2(100, 100)
+                    Scale = new Vector2(1, 28)
                 },
                 Text = "NodeVision",
                 Colour = Colour.Green
@@ -47,6 +50,7 @@ namespace NodeVision.Visualisation
             // Decorative circle
             scene.AddObject(new CircleObject
             {
+                Id = "node.decorative-circle",
                 Transform = new Transform
                 {
                     Position = new Vector2(550, 200),
@@ -59,6 +63,7 @@ namespace NodeVision.Visualisation
             // Second node
             scene.AddObject(new RectangleObject
             {
+                Id = "node.topicA",
                 Transform = new Transform
                 {
                     Position = new Vector2(500, 350),
@@ -70,13 +75,25 @@ namespace NodeVision.Visualisation
 
             scene.AddObject(new TextObject
             {
+                Id = "node.topicA.title",
                 Transform = new Transform
                 {
                     Position = new Vector2(520, 390),
-                    Scale = new Vector2(100, 100)
+                    Scale = new Vector2(1, 20)
                 },
                 Text = "Topic A",
                 Colour = Colour.Red
+            });
+            
+            scene.AddObject(new ImageObject
+            {
+                Transform = new Transform
+                {
+                    Position = new Vector2(200, 200),
+                    Scale = Vector2.One
+                },
+                FilePath = "Assets/test-image.png",
+                Size = new Vector2(128, 128)
             });
 
             return scene;

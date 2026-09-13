@@ -13,6 +13,17 @@ function downloadFileFallback(content, filename, mimeType = 'text/plain') {
   URL.revokeObjectURL(url);
 }
 
+export const downloadFileFallbackBinary = (blobData, filename) => {
+  const url = URL.createObjectURL(blobData);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url); // Clean up memory
+};
+
 function uploadFileFallback(onFileLoaded) {
   const input = document.createElement('input');
   input.type = 'file';
@@ -32,6 +43,25 @@ function uploadFileFallback(onFileLoaded) {
   input.click();
 }
 
+export const uploadFileFallbackBinary = (onFileSelected) => {
+  // 1. Create an invisible file input
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.zip'; // Only allow zip files
+  
+  // 2. Listen for when the user selects a file
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Pass the raw File object back to App.jsx (do NOT use FileReader here)
+      onFileSelected(file); 
+    }
+  };
+  
+  // 3. Trigger the file browser dialog
+  input.click();
+};
+
 function convertReactFlowToSaveFile(flow, version = 1) {
   const nodeIdMap = new Map();
 
@@ -45,6 +75,20 @@ function convertReactFlowToSaveFile(flow, version = 1) {
 
     const label = node.data?.label ?? `Node ${numericId}`;
 
+    // Safely format the content to strictly match the JSON Schema
+    let cleanContent;
+    if (node.data?.content?.type === 'image') {
+      cleanContent = {
+        type: 'image',
+        path: node.data.content.path || '' // The zip loop will have already set this to 'assets/...'
+      };
+    } else {
+      cleanContent = {
+        type: 'text',
+        value: node.data?.content?.value ?? label
+      };
+    }
+
     return {
       id: numericId,
       name: label,
@@ -52,10 +96,7 @@ function convertReactFlowToSaveFile(flow, version = 1) {
         x: Number(node.position.x),
         y: Number(node.position.y),
       },
-      content: {
-        type: "text",
-        value: label,
-      },
+      content: cleanContent,
     };
   });
 
@@ -92,7 +133,7 @@ function convertSaveFileToReactFlow(saveFile, nodeType = "sphere") {
     },
     data: {
       label: node.name,
-      content: node.content,
+      content: node.content, // Passes the text/image payload cleanly into React Flow
     },
   }));
 
@@ -106,9 +147,15 @@ function convertSaveFileToReactFlow(saveFile, nodeType = "sphere") {
   return { nodes, edges };
 }
 
+const getExtFromMime = (mime) => {
+  const map = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+  return map[mime] || 'png';
+};
+
 export {
     uploadFileFallback,
     downloadFileFallback,
     convertSaveFileToReactFlow,
-    convertReactFlowToSaveFile
+    convertReactFlowToSaveFile,
+    getExtFromMime
 }

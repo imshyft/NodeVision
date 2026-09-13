@@ -4,7 +4,8 @@ import '@xyflow/react/dist/style.css';
 import Node from './ui/Node'; // The component from the previous step
 import Dropdown from './ui/Dropdown';
 import PropertyPanel from './ui/PropertyPanel';
-import {uploadFileFallback, downloadFileFallback, convertReactFlowToSaveFile, convertSaveFileToReactFlow} from './utils'
+import {uploadFileFallback, downloadFileFallback, convertReactFlowToSaveFile, convertSaveFileToReactFlow, getExtFromMime, uploadFileFallbackBinary, downloadFileFallbackBinary} from './utils'
+import JSZip from 'jszip';
 
 
 // Register custom nodes
@@ -82,16 +83,61 @@ export default function App() {
   }, [setNodes, setEdges]);
 
   const onExport = async () => {
+    const zip = new JSZip();
+    const assetsFolder = zip.folder("assets");
+
+    const exportNodes = JSON.parse(JSON.stringify(nodes));
+
+    console.log(nodes);
+
+    exportNodes.forEach(async (node) => {
+      if (node.data?.content?.type === "image") {
+        const path = node.data.content.path; 
+        const blobUrl = node.data.content.blobUrl;
+        
+        // CASE A: It was imported from a previous ZIP (it has a blobUrl)
+        if (blobUrl) {
+          // Fetch the binary data directly from the RAM URL
+          const response = await fetch(blobUrl);
+          const blobData = await response.blob();
+          
+          // Re-add it to the new ZIP
+          const fileName = path.replace('assets/', '');
+          assetsFolder.file(fileName, blobData);
+          
+          // Clean up the payload so the blobUrl doesn't get saved into the JSON text
+          delete node.data.content.blobUrl;
+        } 
+        
+        // CASE B: It's a brand new upload (it's a Base64 string)
+        else if (path && path.startsWith('data:')) {
+          const [header, base64Data] = path.split(',');
+          const mime = header.split(':')[1].split(';')[0];
+          const ext = getExtFromMime(mime);
+          const fileName = `node_${node.id}.${ext}`;
+
+          assetsFolder.file(fileName, base64Data, { base64: true });
+          node.data.content.path = `assets/${fileName}`;
+        }
+      }
+    });
+
     const payload = convertReactFlowToSaveFile({
-      nodes: nodes,
+      nodes: exportNodes,
       edges: edges
-    }) 
-    const fileContent = JSON.stringify(payload, null, 2);
+    });
+
+    zip.file("nodes.json", JSON.stringify(payload, null, 2));
+    // const fileContent = JSON.stringify(payload, null, 2);
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+
     if (window.electronAPI) {
+      const arrayBuffer = await zipBlob.arrayBuffer();
       const result = await window.electronAPI.saveFile({
-        data: fileContent,
-        filename: 'export.json',
-        extension: 'json'
+        data: new Uint8Array(arrayBuffer),
+        filename: 'export.nodevision',
+        extension: 'nodevision'
       });
 
       if (result.success) {
@@ -100,41 +146,87 @@ export default function App() {
         console.log('Export failed: ', result.error || result.message);
       }
     } else {
-      downloadFileFallback(fileContent, 'project-export.json', 'application/json');
+      downloadFileFallback(zipBlob, 'export.nodevision', 'application/zip');
     }
   }
 
   const onImport = async () => {
+    let fileData;
+
+    nodes.forEach(node => {
+      if (node.data?.content?.blobUrl) {
+        URL.revokeObjectURL(node.data.content.blobUrl);
+      }
+    });
+
     if (window.electronAPI) {
-      const result = await window.electronAPI.loadFile({extensions: ['json']});
-      
+      const result = await window.electronAPI.loadFile({extensions: ['nodevision']});
+
+      // if (result.success) {
+      //   try {
+      //     const parsedData = JSON.parse(result.data);
+      //     const flowData = convertSaveFileToReactFlow(parsedData);
+      //     if (flowData.nodes) {
+      //       // console.log(flowData)
+      //       setNodes(flowData.nodes);
+      //     }
+      //     if (flowData.edges) {
+      //       setEdges(flowData.edges);
+      //     }
+      //     console.log("Loaded Successfully")
+      //   } catch (err) {
+      //     alert("Failed to parse JSON File: Invalid Format");
+      //   }
+      // } 
+
       if (result.success) {
-        try {
-          const parsedData = JSON.parse(result.data);
-          const flowData = convertSaveFileToReactFlow(parsedData);
-          if (flowData.nodes) {
-            // console.log(flowData)
-            setNodes(flowData.nodes);
-          }
-          if (flowData.edges) {
-            setEdges(flowData.edges);
-          }
-          console.log("Loaded Successfully")
-        } catch (err) {
-          alert("Failed to parse JSON File: Invalid Format");
-        }
-      } 
+        fileData = result.data;
+      } else {
+        return;
+      }
     } else {
       // console.log("Upload fallback called");
-      uploadFileFallback((fileContent) => {
-        const parsedData = JSON.parse(fileContent);
-        const flowData = convertSaveFileToReactFlow(parsedData);
-        setNodes(flowData.nodes || []);
-        setEdges(flowData.edges || []);
-      })
+      fileData = await new Promise((resolve) => uploadFileFallbackBinary(resolve));
+    }
+
+    if (!fileData) return;
+
+    try {
+      const zip = await JSZip.loadAsync(fileData);
+
+      const jsonString = await zip.file("nodes.json").async("string");
+      const parsedData = JSON.parse(jsonString);
+      const flowData = convertSaveFileToReactFlow(parsedData);
+
+      if (flowData.nodes) {
+        const newlyLoadedMedia = [];
+
+        for (const node of flowData.nodes) {
+          if (node.data?.content?.type == "image") {
+            const path = node.data.content.path;
+
+            if (path.startsWith('assets/')) {
+              const file = zip.file(path);
+              if (file) {
+                const blobData = await file.async("blob");
+                const objectUrl = URL.createObjectURL(blobData);
+
+                node.data.content.blobUrl = objectUrl;
+              }
+            }
+          }
+        }
+
+        setNodes(flowData.nodes);
+      }
+      if (flowData.edges) {
+        setEdges(flowData.edges);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to parse File: Invalid Format or Corrupted");
     }
   }
-  
 
   const menuActions = [
     {

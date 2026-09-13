@@ -96,7 +96,7 @@ ipcMain.handle('load-file', async (event, {extensions = ['json']} = {}) => {
     const selectedPath = filePaths[0];
 
     try {
-        const fileData = await fs.readFile(selectedPath, 'utf-8');
+        const fileData = await fs.readFile(selectedPath);
         return {
             success: true,
             data: fileData,

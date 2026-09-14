@@ -30,6 +30,9 @@ public partial class MainWindow : Window
         _webcamCapture.Events.Stopped += () => Console.WriteLine("[Webcam] Stopped");
         
         SceneViewControl.SetWebcamSource(_ringBuffer);
+
+        SceneViewControl.PanRequested += delta => _visualisation.Pan(delta);
+        SceneViewControl.ZoomRequested += (delta, focalPoint) => _visualisation.ZoomAt(delta, focalPoint, SceneViewControl.ViewportSize);
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)

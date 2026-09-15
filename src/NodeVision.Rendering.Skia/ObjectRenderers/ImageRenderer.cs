@@ -5,6 +5,8 @@ namespace NodeVision.Rendering.Skia.ObjectRenderers;
 
 public class ImageRenderer : SkiaObjectRenderer
 {
+    private static readonly SKSamplingOptions Sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
+
     public override void DrawObject(RenderCommand command, SKCanvas canvas)
     {
         var imageCommand = (ImageRenderCommand)command;
@@ -28,6 +30,6 @@ public class ImageRenderer : SkiaObjectRenderer
             imageCommand.Size.X,
             imageCommand.Size.Y);
 
-        canvas.DrawImage(image, dest);
+        canvas.DrawImage(image, dest, Sampling);
     }
 }

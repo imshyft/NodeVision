@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Rendering;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Threading;
@@ -19,15 +20,15 @@ using SkiaSharp;
 
 namespace NodeVision.App.Controls;
 
-public class SceneView : Control
+public class SceneView : Control, ICustomHitTest
 {
     private const float ZoomStep = 0.1f;
 
     private readonly RenderBuilder _renderBuilder = new();
     private readonly SkiaRenderer _renderer = new();
 
-    private SKImage? _latestWebcamImage;
-    private readonly object _webcamImageLock = new();
+    private WebcamFrame? _latestFrame;
+    private readonly object _frameLock = new();
     private int _webcamConsumerId = -1;
     private WebcamFrameRingBuffer? _ringBuffer;
 
@@ -43,6 +44,10 @@ public class SceneView : Control
 
     public Vector2 ViewportSize => new Vector2((float)Bounds.Width, (float)Bounds.Height);
 
+    // A control whose only content is custom draw operations is not hit tested unless it opts in,
+    // so without this no pointer event ever reaches the control.
+    public bool HitTest(Point point) => new Rect(0, 0, Bounds.Width, Bounds.Height).Contains(point);
+
     /// <summary>
     /// Registers this view as a consumer of the buffer
     /// </summary>
@@ -53,7 +58,7 @@ public class SceneView : Control
     }
 
     /// <summary>
-    /// Polls the buffer for a new frame, and updates the internal image.
+    /// Polls the buffer for the latest frame.
     /// </summary>
     public void UpdateWebcamFrame()
     {
@@ -62,14 +67,9 @@ public class SceneView : Control
 
         if (_ringBuffer.TryRead(_webcamConsumerId, out var frame))
         {
-            lock (_webcamImageLock)
+            lock (_frameLock)
             {
-                _latestWebcamImage?.Dispose();
-
-                var info = new SKImageInfo(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-                using var bitmap = new SKBitmap(info);
-                frame.BgraData.Span.CopyTo(bitmap.GetPixelSpan());
-                _latestWebcamImage = SKImage.FromBitmap(bitmap);
+                _latestFrame = frame;
             }
         }
     }
@@ -140,38 +140,32 @@ public class SceneView : Control
 
     private void DrawWebcamBackground(DrawingContext context)
     {
-        SKImage? imageToDraw;
+        WebcamFrame frame;
 
-        lock (_webcamImageLock)
+        lock (_frameLock)
         {
-            if (_latestWebcamImage == null)
+            if (_latestFrame == null)
                 return;
 
-            imageToDraw = _latestWebcamImage;
+            frame = _latestFrame.Value;
         }
 
-        try
-        {
-            var rect = new Rect(0, 0, Bounds.Width, Bounds.Height);
-
-            context.Custom(new WebcamDrawOperation(rect, imageToDraw));
-        }
-        catch
-        {
-            // ignore
-        }
+        var rect = new Rect(0, 0, Bounds.Width, Bounds.Height);
+        context.Custom(new WebcamDrawOperation(rect, frame));
     }
 }
 
 internal sealed class WebcamDrawOperation : ICustomDrawOperation
 {
-    private readonly SKImage _image;
+    private static readonly SKSamplingOptions Sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
+
+    private readonly WebcamFrame _frame;
     private readonly Rect _bounds;
 
-    public WebcamDrawOperation(Rect bounds, SKImage image)
+    public WebcamDrawOperation(Rect bounds, WebcamFrame frame)
     {
         _bounds = bounds;
-        _image = image;
+        _frame = frame;
     }
 
     public Rect Bounds => _bounds;
@@ -194,6 +188,9 @@ internal sealed class WebcamDrawOperation : ICustomDrawOperation
         using var lease = leaseFeature.Lease();
         var canvas = lease.SkCanvas;
 
+        // Owned entirely by this operation: never shared with or disposed by another thread.
+        using var image = SkiaHelpers.CreateImage(_frame);
+
         using (context.PushClip(_bounds))
         {
             var dstRect = new SKRect(
@@ -202,7 +199,7 @@ internal sealed class WebcamDrawOperation : ICustomDrawOperation
                 (float)_bounds.Right,
                 (float)_bounds.Bottom);
 
-            canvas.DrawImage(_image, dstRect);
+            canvas.DrawImage(image, dstRect, Sampling);
         }
     }
 }

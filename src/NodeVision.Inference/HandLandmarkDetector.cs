@@ -51,6 +51,9 @@ public sealed class HandLandmarkDetector
 {
     private const int InputSize = 224;
 
+    // Matches the reference implementation's default conf_threshold.
+    private const float PresenceThreshold = 0.8f;
+
     private readonly InferenceSession _session;
 
     public HandLandmarkDetector(InferenceSession session)
@@ -127,6 +130,13 @@ public sealed class HandLandmarkDetector
         var rawLandmarks = results.First(r => r.Name == "Identity").AsTensor<float>();
         var presence = results.First(r => r.Name == "Identity_1").AsTensor<float>()[0, 0];
         var handedness = results.First(r => r.Name == "Identity_2").AsTensor<float>()[0, 0];
+
+        // The palm detector can produce a weak false-positive box (e.g. on
+        // hair, furniture edges) even when no hand is actually present; the
+        // landmark model's own presence score catches those, so reject here
+        // rather than returning landmarks decoded from a non-hand crop.
+        if (presence < PresenceThreshold)
+            return null;
 
         // Scale factor from model-space (0..224) back to crop2's pixel space.
         var cropWh = c2.BoxMax - c2.BoxMin;

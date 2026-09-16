@@ -13,8 +13,10 @@ public sealed class InferenceEngine : IDisposable
     private readonly int _consumerId;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _inferenceTask;
-    private readonly InferenceSession _palmDetector;
-    private readonly InferenceSession _landmarkDetector;
+    private readonly InferenceSession _palmSession;
+    private readonly InferenceSession _landmarkSession;
+    private readonly PalmDetector _palmDetector;
+    private readonly HandLandmarkDetector _handLandmarkDetector;
     private volatile bool _isRunning;
 
     public event Action<InferenceResult>? InferenceCompleted;
@@ -30,8 +32,10 @@ public sealed class InferenceEngine : IDisposable
         _ringBuffer = ringBuffer;
         _consumerId = ringBuffer.RegisterConsumer();
 
-        _palmDetector = new InferenceSession(Path.Combine(modelsDirectory, "hand_detector.onnx"));
-        _landmarkDetector = new InferenceSession(Path.Combine(modelsDirectory, "hand_landmarks_detector.onnx"));
+        _palmSession = new InferenceSession(Path.Combine(modelsDirectory, "hand_detector.onnx"));
+        _landmarkSession = new InferenceSession(Path.Combine(modelsDirectory, "hand_landmarks_detector.onnx"));
+        _palmDetector = new PalmDetector(_palmSession);
+        _handLandmarkDetector = new HandLandmarkDetector(_landmarkSession);
 
         _inferenceTask = Task.Run(InferenceLoopAsync, _cts.Token);
     }
@@ -94,20 +98,33 @@ public sealed class InferenceEngine : IDisposable
     }
 
     /// <summary>
-    /// Runs inference on a frame. Replace with actual model inference.
+    /// Runs the palm-detect -> landmark-decode pipeline on a frame. Palm and
+    /// landmark inference are both synchronous CPU-bound ONNX Runtime calls;
+    /// this already runs on InferenceLoopAsync's dedicated background task,
+    /// so no further Task.Run offloading is needed.
     /// </summary>
-    private async ValueTask<InferenceResult?> RunInferenceAsync(WebcamFrame frame, CancellationToken ct)
+    private ValueTask<InferenceResult?> RunInferenceAsync(WebcamFrame frame, CancellationToken ct)
     {
-        // fake delay
-        await Task.Delay(30, ct).ConfigureAwait(false);
-        
-        
-        return new InferenceResult(
+        var handLandmarks = Array.Empty<HandLandmark>();
+
+        var palm = _palmDetector.Detect(frame);
+        if (palm is { } palmDetection)
+        {
+            var hand = _handLandmarkDetector.Detect(frame, palmDetection);
+            if (hand is { } handResult)
+            {
+                handLandmarks = handResult.Landmarks;
+            }
+        }
+
+        var result = new InferenceResult(
             Timestamp: frame.Timestamp,
             FrameWidth: frame.Width,
             FrameHeight: frame.Height,
             PoseLandmarks: Array.Empty<PoseLandmark>(),
-            HandLandmarks: Array.Empty<HandLandmark>());
+            HandLandmarks: handLandmarks);
+
+        return ValueTask.FromResult<InferenceResult?>(result);
     }
 
     public void Dispose()
@@ -115,8 +132,8 @@ public sealed class InferenceEngine : IDisposable
         StopAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
         _cts.Dispose();
         _ringBuffer.UnregisterConsumer(_consumerId);
-        _palmDetector.Dispose();
-        _landmarkDetector.Dispose();
+        _palmSession.Dispose();
+        _landmarkSession.Dispose();
     }
 }
 

@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.ML.OnnxRuntime;
 using NodeVision.Core;
 
 namespace NodeVision.Inference;
@@ -11,15 +13,26 @@ public sealed class InferenceEngine : IDisposable
     private readonly int _consumerId;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _inferenceTask;
+    private readonly InferenceSession _palmDetector;
+    private readonly InferenceSession _landmarkDetector;
     private volatile bool _isRunning;
 
     public event Action<InferenceResult>? InferenceCompleted;
     public event Action<Exception>? Error;
 
     public InferenceEngine(WebcamFrameRingBuffer ringBuffer)
+        : this(ringBuffer, Path.Combine(AppContext.BaseDirectory, "Models"))
+    {
+    }
+
+    public InferenceEngine(WebcamFrameRingBuffer ringBuffer, string modelsDirectory)
     {
         _ringBuffer = ringBuffer;
         _consumerId = ringBuffer.RegisterConsumer();
+
+        _palmDetector = new InferenceSession(Path.Combine(modelsDirectory, "hand_detector.onnx"));
+        _landmarkDetector = new InferenceSession(Path.Combine(modelsDirectory, "hand_landmarks_detector.onnx"));
+
         _inferenceTask = Task.Run(InferenceLoopAsync, _cts.Token);
     }
 
@@ -102,6 +115,8 @@ public sealed class InferenceEngine : IDisposable
         StopAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
         _cts.Dispose();
         _ringBuffer.UnregisterConsumer(_consumerId);
+        _palmDetector.Dispose();
+        _landmarkDetector.Dispose();
     }
 }
 

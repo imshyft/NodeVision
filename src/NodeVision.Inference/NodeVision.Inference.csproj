@@ -13,4 +13,8 @@
         <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
     </ItemGroup>
 
+    <ItemGroup>
+        <None Include="Models\*.onnx" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>

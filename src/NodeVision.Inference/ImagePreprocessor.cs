@@ -50,10 +50,23 @@ public static class ImagePreprocessor
         using var rgb = new Mat();
         Cv2.CvtColor(padded, rgb, ColorConversionCodes.BGR2RGB);
 
-        var tensor = new DenseTensor<float>(new[] { 1, targetSize, targetSize, 3 });
-        for (var y = 0; y < targetSize; y++)
+        var tensor = RgbMatToTensor(rgb, targetSize);
+
+        return new LetterboxResult(tensor, left / ratio, top / ratio, ratio);
+    }
+
+    /// <summary>
+    /// Converts an already-square RGB Mat of the given size into a NHWC
+    /// [0,1]-normalized tensor. Shared by <see cref="LetterboxToTensor"/> and
+    /// the hand-landmark crop/rotate pipeline, which produces its own RGB
+    /// crop before resizing.
+    /// </summary>
+    public static DenseTensor<float> RgbMatToTensor(Mat rgb, int size)
+    {
+        var tensor = new DenseTensor<float>(new[] { 1, size, size, 3 });
+        for (var y = 0; y < size; y++)
         {
-            for (var x = 0; x < targetSize; x++)
+            for (var x = 0; x < size; x++)
             {
                 var pixel = rgb.At<Vec3b>(y, x);
                 tensor[0, y, x, 0] = pixel.Item0 / 255f;
@@ -62,6 +75,6 @@ public static class ImagePreprocessor
             }
         }
 
-        return new LetterboxResult(tensor, left / ratio, top / ratio, ratio);
+        return tensor;
     }
 }

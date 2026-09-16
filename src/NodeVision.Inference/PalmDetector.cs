@@ -20,8 +20,18 @@ public readonly record struct HandBoundingBox(float X1, float Y1, float X2, floa
 }
 
 /// <summary>
+/// A palm detection: the hand bounding box plus the 7 palm keypoints the
+/// detector itself regresses (in the 21-point hand landmark scheme these
+/// correspond to: wrist, index/middle/ring/pinky MCP, thumb CMC, thumb MCP -
+/// in that output order). PalmLandmarks[0] and [2] (wrist and middle-finger
+/// MCP) are what the landmark stage uses to compute a rotation angle before
+/// cropping, since the landmark model expects a roughly upright hand.
+/// </summary>
+public readonly record struct PalmDetection(HandBoundingBox Box, Vector2[] PalmLandmarks);
+
+/// <summary>
 /// Runs the BlazePalm hand detector (hand_detector.onnx) and decodes its raw
-/// SSD anchor output into a single best hand bounding box.
+/// SSD anchor output into a single best hand detection.
 /// Decode/NMS logic mirrors opencv_zoo's mp_palmdet.py reference
 /// implementation, which is the only place the exact anchor-to-output
 /// mapping and postprocessing constants for this model are documented.
@@ -32,6 +42,7 @@ public sealed class PalmDetector
     private const float ScoreThreshold = 0.5f;
     private const float NmsThreshold = 0.3f;
     private const int TopK = 5000;
+    private const int PalmLandmarkCount = 7;
 
     private readonly InferenceSession _session;
 
@@ -40,7 +51,7 @@ public sealed class PalmDetector
         _session = session;
     }
 
-    public HandBoundingBox? Detect(in WebcamFrame frame)
+    public PalmDetection? Detect(in WebcamFrame frame)
     {
         var preprocessed = ImagePreprocessor.LetterboxToTensor(frame, InputSize);
 
@@ -56,6 +67,7 @@ public sealed class PalmDetector
 
         var boxes = new List<Rect2d>();
         var scores = new List<float>();
+        var anchorIndices = new List<int>();
 
         for (var i = 0; i < PalmAnchors.Count; i++)
         {
@@ -77,6 +89,7 @@ public sealed class PalmDetector
 
             boxes.Add(new Rect2d(x1, y1, x2 - x1, y2 - y1));
             scores.Add(score);
+            anchorIndices.Add(i);
         }
 
         if (boxes.Count == 0)
@@ -89,10 +102,25 @@ public sealed class PalmDetector
 
         var bestIndex = keepIndices.OrderByDescending(idx => scores[idx]).First();
         var best = boxes[bestIndex];
+        var anchorIndex = anchorIndices[bestIndex];
+        var (bestAnchorX, bestAnchorY) = PalmAnchors.Values[anchorIndex];
 
-        return new HandBoundingBox(
+        var palmLandmarks = new Vector2[PalmLandmarkCount];
+        for (var p = 0; p < PalmLandmarkCount; p++)
+        {
+            var lxDelta = boxAndLandmarkDeltas[0, anchorIndex, 4 + p * 2] / InputSize;
+            var lyDelta = boxAndLandmarkDeltas[0, anchorIndex, 4 + p * 2 + 1] / InputSize;
+
+            var lx = (lxDelta + bestAnchorX) * scale - preprocessed.PadLeft;
+            var ly = (lyDelta + bestAnchorY) * scale - preprocessed.PadTop;
+            palmLandmarks[p] = new Vector2(lx, ly);
+        }
+
+        var box = new HandBoundingBox(
             (float)best.X, (float)best.Y,
             (float)(best.X + best.Width), (float)(best.Y + best.Height),
             scores[bestIndex]);
+
+        return new PalmDetection(box, palmLandmarks);
     }
 }

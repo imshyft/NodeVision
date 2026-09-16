@@ -8,6 +8,11 @@ differennt projects of the solution are in src folder
 - `NodeVision.App` - Presentation App
 - `NodeVision.Designer` - App for designer tool
 - `NodeVision.Inference` - Library for ML inference
+- `NodeVision.Inference.Demo` - Standalone tool for testing hand-tracking pipeline 
+        Run from the terminal :
+        ```
+        dotnet run --project src/NodeVision.Inference.Demo
+        ```
 
 
 ## Branches

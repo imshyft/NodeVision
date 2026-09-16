@@ -15,6 +15,7 @@
 
     <ItemGroup>
         <None Include="Models\*.onnx" CopyToOutputDirectory="PreserveNewest" />
+        <EmbeddedResource Include="Resources\PalmAnchors.csv" />
     </ItemGroup>
 
 </Project>

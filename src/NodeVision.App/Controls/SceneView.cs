@@ -32,11 +32,21 @@ public class SceneView : Control, ICustomHitTest
     private int _webcamConsumerId = -1;
     private WebcamFrameRingBuffer? _ringBuffer;
 
+    private const float ClickThreshold = 4f;
+
     private bool _isPanning;
+    private bool _movedWhilePressed;
+    private Point _pressPosition;
     private Point _lastPointerPosition;
 
     public event Action<Vector2>? PanRequested;
     public event Action<float, Vector2>? ZoomRequested;
+
+    /// <summary>
+    /// Raised with the control-space position of a press that stayed still, i.e. a click rather
+    /// than the start of a pan.
+    /// </summary>
+    public event Action<Vector2>? Clicked;
 
     public Scene? Scene { get; set; }
     public Vector2 CameraTranslation { get; set; }
@@ -80,7 +90,9 @@ public class SceneView : Control, ICustomHitTest
             return;
 
         _isPanning = true;
-        _lastPointerPosition = e.GetPosition(this);
+        _movedWhilePressed = false;
+        _pressPosition = e.GetPosition(this);
+        _lastPointerPosition = _pressPosition;
         e.Pointer.Capture(this);
     }
 
@@ -93,6 +105,9 @@ public class SceneView : Control, ICustomHitTest
         var delta = position - _lastPointerPosition;
         _lastPointerPosition = position;
 
+        if (Math.Abs(position.X - _pressPosition.X) > ClickThreshold || Math.Abs(position.Y - _pressPosition.Y) > ClickThreshold)
+            _movedWhilePressed = true;
+
         PanRequested?.Invoke(new Vector2((float)delta.X, (float)delta.Y));
     }
 
@@ -103,6 +118,12 @@ public class SceneView : Control, ICustomHitTest
 
         _isPanning = false;
         e.Pointer.Capture(null);
+
+        if (_movedWhilePressed)
+            return;
+
+        var clickPosition = e.GetPosition(this);
+        Clicked?.Invoke(new Vector2((float)clickPosition.X, (float)clickPosition.Y));
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

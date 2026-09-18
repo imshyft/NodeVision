@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace NodeVision.Core
 {
@@ -57,12 +57,14 @@ namespace NodeVision.Core
         public string Header { get; set; } = string.Empty;
         public string Body { get; set; } = string.Empty;
         public Vector2 Size { get; set; }
+
+        // Presentation value written by the visualisation: 0 = hidden, 1 = fully revealed.
+        public float Reveal { get; set; } = 1f;
     }
 
     public class Connection : SceneObject
     {
-        public int Id { get; set; }
-        private Node ParentNode { get; set; }
-        private Node ChildNode { get; set; }
+        public string ParentId { get; set; } = string.Empty;
+        public string ChildId { get; set; } = string.Empty;
     }
 }

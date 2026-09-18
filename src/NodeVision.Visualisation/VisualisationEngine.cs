@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using NodeVision.Core;
 using NodeVision.Visualisation.Persistence;
@@ -6,8 +7,17 @@ namespace NodeVision.Visualisation
 {
     public class VisualizationEngine
     {
+        private readonly PresentationState _presentation = new();
+        private readonly List<ISceneBehaviour> _behaviours = new();
+        private readonly SceneGraph _graph;
         private float _time;
+
         public Scene Scene { get; }
+
+        /// <summary>
+        /// Parent/child structure and the per-node reveal animation for that scene.
+        /// </summary>
+        public NodeExpansion Expansion { get; } = new();
 
         public Vector2 CameraPosition { get; set; }
         public float CameraZoom { get; set; } = 1f;
@@ -17,12 +27,48 @@ namespace NodeVision.Visualisation
         public VisualizationEngine()
         {
             Scene = TestSceneFactory.CreateScene();
+
+            // One behaviour per feature. Adding one here is all it takes for it to run every frame.
+            _behaviours.Add(Expansion);
+
+            _graph = SceneGraph.Build(Scene);
+            _graph.ApplyDrawOrder(Scene);
+
+            foreach (var behaviour in _behaviours)
+                behaviour.Build(_graph);
+
+            Refresh(0f); // present the initial state, so nothing animates in on the first frame
         }
 
         public void Update(float deltaTime)
         {
             _time += deltaTime;
 
+            Refresh(deltaTime);
+            SyncLayout();
+        }
+
+        /// <summary>
+        /// Runs every behaviour for this frame and applies what they agree on.
+        /// </summary>
+        private void Refresh(float deltaTime)
+        {
+            _presentation.Reset();
+
+            foreach (var behaviour in _behaviours)
+                behaviour.Update(deltaTime, _graph, _presentation);
+
+            // The only writer of Node.Reveal and node positions, so two features cannot fight over
+            // the same field and last-writer-wins is never a surprise.
+            _presentation.Apply(_graph);
+        }
+
+        /// <summary>
+        /// Mirrors the canvas layout for persistence. A node can be mid-reveal, so the layout records
+        /// the position the scene authored rather than the animated one.
+        /// </summary>
+        private void SyncLayout()
+        {
             foreach (var obj in Scene.Objects)
             {
                 if (string.IsNullOrEmpty(obj.Id))
@@ -36,10 +82,27 @@ namespace NodeVision.Visualisation
                     CurrentLayout.Positions[obj.Id] = position;
                 }
 
-                position.X = obj.Transform.Position.X;
-                position.Y = obj.Transform.Position.Y;
+                var source = _graph.Contains(obj.Id) ? _graph.AuthoredPosition(obj.Id) : obj.Transform.Position;
+                position.X = source.X;
+                position.Y = source.Y;
             }
         }
+
+        /// <summary>
+        /// True when the node is expanded, meaning its children are being revealed.
+        /// </summary>
+        public bool IsExpanded(string nodeId) => Expansion.IsExpanded(nodeId);
+
+        /// <summary>
+        /// Expands or collapses a node, animating its children out of it or back into it.
+        /// </summary>
+        public void ToggleExpanded(string nodeId) => Expansion.ToggleExpanded(nodeId);
+
+        /// <summary>
+        /// The topmost visible node under a canvas-space point, or null. Pointer input has to be
+        /// converted with <see cref="ScreenToCanvas"/> first.
+        /// </summary>
+        public string? HitTestNode(Vector2 canvasPoint) => _presentation.HitTest(canvasPoint, _graph);
 
         /// <summary>
         /// Pans the camera position by a screen-space delta (in pixels).

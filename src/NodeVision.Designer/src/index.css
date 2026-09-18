@@ -1,0 +1,9 @@
+/* Target the edge path when it is selected */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #2671fd !important; /* Your desired selection color */
+}
+
+/* Optional: Target the edge marker/arrowhead if you use them */
+.react-flow__edge.selected .react-flow__edge-marker path {
+  fill: #ff0072 !important;
+}

@@ -22,6 +22,44 @@ public class TextRenderer : SkiaObjectRenderer
             Size = fontSize
         };
 
-        canvas.DrawText(textCommand.Text, textCommand.Position.X, textCommand.Position.Y, font, paint);
+        var lines = WrapLines(textCommand.Text, textCommand.MaxWidth, font);
+        var lineHeight = fontSize * textCommand.LineSpacing;
+        var baseline = textCommand.Anchor == TextAnchor.Top
+            ? textCommand.Position.Y - font.Metrics.Ascent
+            : textCommand.Position.Y;
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            canvas.DrawText(lines[i], textCommand.Position.X, baseline + i * lineHeight, SKTextAlign.Left, font, paint);
+        }
+    }
+
+    private static List<string> WrapLines(string text, float maxWidth, SKFont font)
+    {
+        if (maxWidth <= 0f)
+        {
+            return new List<string> { text };
+        }
+
+        var lines = new List<string>();
+        var line = string.Empty;
+
+        foreach (var word in text.Split(' '))
+        {
+            var candidate = line.Length == 0 ? word : line + " " + word;
+
+            if (line.Length > 0 && font.MeasureText(candidate) > maxWidth)
+            {
+                lines.Add(line);
+                line = word;
+            }
+            else
+            {
+                line = candidate;
+            }
+        }
+
+        lines.Add(line);
+        return lines;
     }
 }

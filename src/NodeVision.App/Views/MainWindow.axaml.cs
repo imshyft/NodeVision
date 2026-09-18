@@ -30,6 +30,16 @@ public partial class MainWindow : Window
         _webcamCapture.Events.Stopped += () => Console.WriteLine("[Webcam] Stopped");
         
         SceneViewControl.SetWebcamSource(_ringBuffer);
+
+        SceneViewControl.PanRequested += delta => _visualisation.Pan(delta);
+
+        SceneViewControl.Clicked += point =>
+        {
+            var canvasPoint = _visualisation.ScreenToCanvas(point, SceneViewControl.ViewportSize);
+            if (_visualisation.HitTestNode(canvasPoint) is { } nodeId)
+                _visualisation.ToggleExpanded(nodeId);
+        };
+        SceneViewControl.ZoomRequested += (delta, focalPoint) => _visualisation.ZoomAt(delta, focalPoint, SceneViewControl.ViewportSize);
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
@@ -43,9 +53,17 @@ public partial class MainWindow : Window
             Interval = TimeSpan.FromMilliseconds(16)
         };
 
+        var clock = Stopwatch.StartNew();
+        var lastTick = clock.Elapsed;
+
         timer.Tick += (_, _) =>
         {
-            _visualisation.Update(1f / 60f);
+            var now = clock.Elapsed;
+            var deltaTime = (float)(now - lastTick).TotalSeconds;
+            lastTick = now;
+
+            // Clamped so a stall does not jump an animation straight to its end.
+            _visualisation.Update(Math.Min(deltaTime, 0.1f));
 
             SceneViewControl.CameraTranslation = _visualisation.CameraPosition;
             SceneViewControl.CameraZoom = _visualisation.CameraZoom;

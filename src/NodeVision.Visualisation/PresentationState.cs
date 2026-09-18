@@ -34,14 +34,14 @@ public sealed class NodePresentation
 
 /// <summary>
 /// What every behaviour in a frame agrees should be presented. Applied onto the scene in one place, so
-/// Node.Reveal and a node transform each have exactly one writer no matter how many features run.
+/// Node.Reveal and a node position each have exactly one writer no matter how many features run.
 /// Entries are reused between frames because this is touched every tick.
 /// </summary>
 public sealed class PresentationState
 {
-    private readonly Dictionary<string, NodePresentation> _nodes = new();
+    private readonly Dictionary<int, NodePresentation> _nodes = new();
 
-    public NodePresentation For(string nodeId)
+    public NodePresentation For(int nodeId)
     {
         if (!_nodes.TryGetValue(nodeId, out var state))
             _nodes[nodeId] = state = new NodePresentation();
@@ -57,10 +57,10 @@ public sealed class PresentationState
     }
 
     /// <summary>True when nothing hides the node: no reveal was set, or it is fully revealed.</summary>
-    public bool IsVisible(string nodeId) => !_nodes.TryGetValue(nodeId, out var state) || !state.HasReveal || state.Reveal >= 1f;
+    public bool IsVisible(int nodeId) => !_nodes.TryGetValue(nodeId, out var state) || !state.HasReveal || state.Reveal >= 1f;
 
     /// <summary>Where the node is being presented, falling back to where the scene put it.</summary>
-    public Vector2 PositionOf(Node node) => _nodes.TryGetValue(node.Id, out var state) && state.HasPosition ? state.Position : node.Transform.Position;
+    public Vector2 PositionOf(Node node) => _nodes.TryGetValue(node.Id, out var state) && state.HasPosition ? state.Position : node.Position;
 
     public void Apply(SceneGraph graph)
     {
@@ -72,18 +72,13 @@ public sealed class PresentationState
             if (state.HasReveal)
                 node.Reveal = state.Reveal;
 
-            if (!state.HasPosition)
-                continue;
-
-            // Transform is a struct behind a property, so it has to be copied out and written back.
-            var transform = node.Transform;
-            transform.Position = state.Position;
-            node.Transform = transform;
+            if (state.HasPosition)
+                node.Position = state.Position;
         }
     }
 
     /// <summary>The topmost visible node under a canvas-space point, or null.</summary>
-    public string? HitTest(Vector2 canvasPoint, SceneGraph graph)
+    public int? HitTest(Vector2 canvasPoint, SceneGraph graph)
     {
         // Draw order is deepest first, so the last node in the list is the topmost one.
         for (var i = graph.Nodes.Count - 1; i >= 0; i--)

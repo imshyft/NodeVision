@@ -10,10 +10,10 @@ namespace NodeVision.Visualisation;
 public sealed class SceneGraph
 {
     private readonly List<Node> _nodes = new();
-    private readonly Dictionary<string, Node> _nodesById = new();
-    private readonly Dictionary<string, string> _parentByChild = new();
-    private readonly HashSet<string> _detached = new();
-    private readonly Dictionary<string, Vector2> _authored = new();
+    private readonly Dictionary<int, Node> _nodesById = new();
+    private readonly Dictionary<int, int> _parentByChild = new();
+    private readonly HashSet<int> _detached = new();
+    private readonly Dictionary<int, Vector2> _authored = new();
 
     private SceneGraph()
     {
@@ -30,24 +30,24 @@ public sealed class SceneGraph
 
         foreach (var sceneObject in scene.Objects)
         {
-            if (sceneObject is not Node node || string.IsNullOrEmpty(node.Id))
+            if (sceneObject is not Node node)
                 continue;
 
             graph._nodes.Add(node);
             graph._nodesById[node.Id] = node;
-            graph._authored[node.Id] = node.Transform.Position;
+            graph._authored[node.Id] = node.Position;
         }
 
         foreach (var sceneObject in scene.Objects)
         {
             if (sceneObject is not Connection link)
                 continue;
-            if (!graph._nodesById.ContainsKey(link.ParentId) || !graph._nodesById.ContainsKey(link.ChildId))
+            if (!graph._nodesById.ContainsKey(link.ParentNodeId) || !graph._nodesById.ContainsKey(link.ChildNodeId))
                 continue;
-            if (graph._parentByChild.ContainsKey(link.ChildId))
+            if (graph._parentByChild.ContainsKey(link.ChildNodeId))
                 continue; // first parent wins, and that parent is also the reveal origin
 
-            graph._parentByChild[link.ChildId] = link.ParentId;
+            graph._parentByChild[link.ChildNodeId] = link.ParentNodeId;
         }
 
         // A node whose parents never reach a root is part of an authoring cycle; treat it as a root so
@@ -62,17 +62,17 @@ public sealed class SceneGraph
         return graph;
     }
 
-    public bool Contains(string nodeId) => _nodesById.ContainsKey(nodeId);
+    public bool Contains(int nodeId) => _nodesById.ContainsKey(nodeId);
 
-    public bool TryGetNode(string nodeId, out Node node) => _nodesById.TryGetValue(nodeId, out node!);
+    public bool TryGetNode(int nodeId, out Node node) => _nodesById.TryGetValue(nodeId, out node!);
 
-    public bool TryGetParent(string nodeId, out string parentId) => _parentByChild.TryGetValue(nodeId, out parentId!);
+    public bool TryGetParent(int nodeId, out int parentId) => _parentByChild.TryGetValue(nodeId, out parentId);
 
     /// <summary>True when the node sits in an authoring cycle and has no real root above it.</summary>
-    public bool IsDetached(string nodeId) => _detached.Contains(nodeId);
+    public bool IsDetached(int nodeId) => _detached.Contains(nodeId);
 
     /// <summary>The position the scene authored for a node, before any behaviour moved it.</summary>
-    public Vector2 AuthoredPosition(string nodeId) => _authored.TryGetValue(nodeId, out var position) ? position : Vector2.Zero;
+    public Vector2 AuthoredPosition(int nodeId) => _authored.TryGetValue(nodeId, out var position) ? position : Vector2.Zero;
 
     /// <summary>
     /// Rewrites the scene so non-node objects stay first (a background, images) and nodes follow deepest
@@ -114,10 +114,10 @@ public sealed class SceneGraph
             _nodes.Add(entry.Node);
     }
 
-    private int DepthOf(string nodeId)
+    private int DepthOf(int nodeId)
     {
         var depth = 0;
-        var visited = new HashSet<string>();
+        var visited = new HashSet<int>();
         var current = nodeId;
 
         while (_parentByChild.TryGetValue(current, out var parentId) && visited.Add(current))
@@ -129,9 +129,9 @@ public sealed class SceneGraph
         return depth;
     }
 
-    private bool ReachesRoot(string nodeId)
+    private bool ReachesRoot(int nodeId)
     {
-        var visited = new HashSet<string>();
+        var visited = new HashSet<int>();
         var current = nodeId;
 
         while (_parentByChild.TryGetValue(current, out var parentId))

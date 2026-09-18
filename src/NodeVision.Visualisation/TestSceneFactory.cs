@@ -8,67 +8,62 @@ namespace NodeVision.Visualisation
         {
             var scene = new Scene();
 
-            // node.main is the root; node.topicA and node.topicB are its children, and
-            // node.topicA.detail is a grandchild, so the reveal has to recurse.
+            // Node 1 is the root; 2 and 4 are its children, and 3 is a grandchild of 2, so the reveal
+            // has to recurse.
             scene.AddObject(new Node
             {
-                Id = "node.main",
-                Transform = new Transform
-                {
-                    Position = new Vector2(150, -150),
-                    Scale = Vector2.One
-                },
+                Id = 1,
+                Position = new Vector2(150, -150),
                 Size = new Vector2(300, 160),
-                Header = "NodeVision",
-                Body = "Gesture driven spatial presentation canvas. Navigate ideas in space instead of stepping through slides."
+                NodeName = "NodeVision",
+                Content = new TextContent
+                {
+                    Value = "Gesture driven spatial presentation canvas. Navigate ideas in space instead of stepping through slides."
+                }
             });
 
             scene.AddObject(new Node
             {
-                Id = "node.topicA",
-                Transform = new Transform
-                {
-                    Position = new Vector2(-350, -150),
-                    Scale = Vector2.One
-                },
+                Id = 2,
+                Position = new Vector2(-350, -150),
                 Size = new Vector2(300, 160),
-                Header = "Semantic zoom",
-                Body = "Overview shows structure and relationships. Detail appears only as the presenter zooms in."
+                NodeName = "Semantic zoom",
+                Content = new TextContent
+                {
+                    Value = "Overview shows structure and relationships. Detail appears only as the presenter zooms in."
+                }
             });
 
             scene.AddObject(new Node
             {
-                Id = "node.topicA.detail",
-                Transform = new Transform
-                {
-                    Position = new Vector2(-350, 120),
-                    Scale = Vector2.One
-                },
+                Id = 3,
+                Position = new Vector2(-350, 120),
                 Size = new Vector2(260, 140),
-                Header = "Detail on approach",
-                Body = "A child stays hidden until its parent is expanded, then it emerges from the parent card."
+                NodeName = "Detail on approach",
+                Content = new TextContent
+                {
+                    Value = "A child stays hidden until its parent is expanded, then it emerges from the parent card."
+                }
             });
 
             scene.AddObject(new Node
             {
-                Id = "node.topicB",
-                Transform = new Transform
-                {
-                    Position = new Vector2(150, 120),
-                    Scale = Vector2.One
-                },
+                Id = 4,
+                Position = new Vector2(150, 120),
                 Size = new Vector2(300, 160),
-                Header = "Gesture navigation",
-                Body = "Point and pinch to move through the canvas; expanding a node is the first gesture driven reveal."
+                NodeName = "Gesture navigation",
+                Content = new TextContent
+                {
+                    Value = "Point and pinch to move through the canvas; expanding a node is the first gesture driven reveal."
+                }
             });
 
-            scene.AddObject(new Connection { Id = "conn.main.topicA", ParentId = "node.main", ChildId = "node.topicA" });
-            scene.AddObject(new Connection { Id = "conn.main.topicB", ParentId = "node.main", ChildId = "node.topicB" });
-            scene.AddObject(new Connection { Id = "conn.topicA.detail", ParentId = "node.topicA", ChildId = "node.topicA.detail" });
+            scene.AddObject(new Connection { Id = 1, ParentNodeId = 1, ChildNodeId = 2 });
+            scene.AddObject(new Connection { Id = 2, ParentNodeId = 1, ChildNodeId = 4 });
+            scene.AddObject(new Connection { Id = 3, ParentNodeId = 2, ChildNodeId = 3 });
 
             scene.AddObject(new CircleObject
             {
-                Id = "node.decorative-circle",
                 Transform = new Transform
                 {
                     Position = new Vector2(430, 300),
@@ -80,7 +75,6 @@ namespace NodeVision.Visualisation
 
             scene.AddObject(new ImageObject
             {
-                Id = "node.decorative-image",
                 Transform = new Transform
                 {
                     Position = new Vector2(-470, 250),

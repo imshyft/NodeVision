@@ -71,18 +71,18 @@ namespace NodeVision.Visualisation
         {
             foreach (var obj in Scene.Objects)
             {
-                if (string.IsNullOrEmpty(obj.Id))
+                if (obj is not Node node)
                 {
                     continue;
                 }
 
-                if (!CurrentLayout.Positions.TryGetValue(obj.Id, out var position))
+                if (!CurrentLayout.Positions.TryGetValue(node.Id, out var position))
                 {
                     position = new NodePosition();
-                    CurrentLayout.Positions[obj.Id] = position;
+                    CurrentLayout.Positions[node.Id] = position;
                 }
 
-                var source = _graph.Contains(obj.Id) ? _graph.AuthoredPosition(obj.Id) : obj.Transform.Position;
+                var source = _graph.Contains(node.Id) ? _graph.AuthoredPosition(node.Id) : node.Position;
                 position.X = source.X;
                 position.Y = source.Y;
             }
@@ -91,18 +91,18 @@ namespace NodeVision.Visualisation
         /// <summary>
         /// True when the node is expanded, meaning its children are being revealed.
         /// </summary>
-        public bool IsExpanded(string nodeId) => Expansion.IsExpanded(nodeId);
+        public bool IsExpanded(int nodeId) => Expansion.IsExpanded(nodeId);
 
         /// <summary>
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
-        public void ToggleExpanded(string nodeId) => Expansion.ToggleExpanded(nodeId);
+        public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);
 
         /// <summary>
         /// The topmost visible node under a canvas-space point, or null. Pointer input has to be
         /// converted with <see cref="ScreenToCanvas"/> first.
         /// </summary>
-        public string? HitTestNode(Vector2 canvasPoint) => _presentation.HitTest(canvasPoint, _graph);
+        public int? HitTestNode(Vector2 canvasPoint) => _presentation.HitTest(canvasPoint, _graph);
 
         /// <summary>
         /// Pans the camera position by a screen-space delta (in pixels).

@@ -17,7 +17,7 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
         // A card that is still revealing grows out of its own centre, so the metrics scale with it.
         var metrics = 0.85f + 0.15f * reveal;
         var size = node.Size * metrics;
-        var position = node.Transform.Position + node.Size * ((1f - metrics) * 0.5f);
+        var position = node.Position + node.Size * ((1f - metrics) * 0.5f);
 
         var cornerRadius = NodeStyle.CornerRadius * metrics;
         var padding = NodeStyle.Padding * metrics;
@@ -56,7 +56,7 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
 
         commands.Add(new TextRenderCommand
         {
-            Text = node.Header,
+            Text = node.NodeName,
             Colour = Fade(NodeStyle.HeaderText, reveal),
             Position = new Vector2(position.X + textInset, position.Y + padding),
             Size = new Vector2(textWidth, headerSize),
@@ -66,7 +66,7 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
 
         commands.Add(new TextRenderCommand
         {
-            Text = node.Body,
+            Text = node.Content is TextContent content ? content.Value : string.Empty,
             Colour = Fade(NodeStyle.BodyText, reveal),
             Position = new Vector2(position.X + textInset, position.Y + padding + headerSize + headerGap),
             Size = new Vector2(textWidth, bodySize),

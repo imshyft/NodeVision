@@ -24,7 +24,6 @@ namespace NodeVision.Core
 
     public abstract class SceneObject
     {
-        public string Id { get; set; } = string.Empty;
         public Transform Transform { get; set; } = Transform.Identity;
     }
 
@@ -36,7 +35,7 @@ namespace NodeVision.Core
 
     public class TextObject : SceneObject
     {
-        public string Text { get; set; }
+        public string Text { get; set; } = string.Empty;
         public Colour Colour { get; set; }
     }
 
@@ -54,17 +53,38 @@ namespace NodeVision.Core
 
     public class Node : SceneObject
     {
-        public string Header { get; set; } = string.Empty;
-        public string Body { get; set; } = string.Empty;
-        public Vector2 Size { get; set; }
+        public int Id { get; set; }
+        public string NodeName { get; set; } = string.Empty;
+        public Vector2 Position { get; set; }
+        public NodeContent Content { get; set; } = new TextContent();
 
-        // Presentation value written by the visualisation: 0 = hidden, 1 = fully revealed.
+        // Card size and presentation reveal, written by the visualisation and read by the renderer.
+        public Vector2 Size { get; set; }
         public float Reveal { get; set; } = 1f;
+    }
+
+    public abstract class NodeContent
+    {
+    }
+
+    public class TextContent : NodeContent
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+    public class ImageContent : NodeContent
+    {
+        public string FilePath { get; set; } = string.Empty;
     }
 
     public class Connection : SceneObject
     {
-        public string ParentId { get; set; } = string.Empty;
-        public string ChildId { get; set; } = string.Empty;
+        public int Id { get; set; }
+        public int ParentNodeId { get; set; }
+        public int ChildNodeId { get; set; }
+
+        // Resolved after loading.
+        public Node? ParentNode { get; set; }
+        public Node? ChildNode { get; set; }
     }
 }

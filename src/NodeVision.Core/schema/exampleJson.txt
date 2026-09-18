@@ -3,20 +3,26 @@
   "nodes": [
     {
       "id": 1,
-      "name": "Node A",
-      "info": "Some information",
+      "name": "Camera",
       "position": {
         "x": 100,
         "y": 150
+      },
+      "content": {
+        "type": "text",
+        "value": "Camera input node"
       }
     },
     {
       "id": 2,
-      "name": "Node B",
-      "info": "More information",
+      "name": "Diagram",
       "position": {
-        "x": 350,
+        "x": 300,
         "y": 150
+      },
+      "content": {
+        "type": "image",
+        "path": "Assets/diagram.png"
       }
     }
   ],

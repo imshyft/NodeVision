@@ -4,7 +4,7 @@ namespace NodeVision.Visualisation.Persistence
 {
     public sealed class NodeLayout
     {
-        public Dictionary<string, NodePosition> Positions { get; } = new();
+        public Dictionary<int, NodePosition> Positions { get; } = new();
     }
 
     public sealed class NodePosition

@@ -12,12 +12,12 @@ public sealed class NodeExpansion : ISceneBehaviour
 {
     private const float RevealDuration = 0.22f;
 
-    private readonly HashSet<string> _expanded = new();
-    private readonly Dictionary<string, float> _reveal = new();
+    private readonly HashSet<int> _expanded = new();
+    private readonly Dictionary<int, float> _reveal = new();
 
-    public bool IsExpanded(string nodeId) => _expanded.Contains(nodeId);
+    public bool IsExpanded(int nodeId) => _expanded.Contains(nodeId);
 
-    public void SetExpanded(string nodeId, bool expanded)
+    public void SetExpanded(int nodeId, bool expanded)
     {
         if (expanded)
             _expanded.Add(nodeId);
@@ -25,7 +25,7 @@ public sealed class NodeExpansion : ISceneBehaviour
             _expanded.Remove(nodeId);
     }
 
-    public void ToggleExpanded(string nodeId) => SetExpanded(nodeId, !IsExpanded(nodeId));
+    public void ToggleExpanded(int nodeId) => SetExpanded(nodeId, !IsExpanded(nodeId));
 
     public void Build(SceneGraph graph)
     {
@@ -68,7 +68,7 @@ public sealed class NodeExpansion : ISceneBehaviour
     /// A node is revealed only while every node above it is expanded, so collapsing an ancestor hides
     /// the whole branch below it rather than just its immediate children.
     /// </summary>
-    private float TargetOf(SceneGraph graph, string nodeId)
+    private float TargetOf(SceneGraph graph, int nodeId)
     {
         if (graph.IsDetached(nodeId))
             return 1f;

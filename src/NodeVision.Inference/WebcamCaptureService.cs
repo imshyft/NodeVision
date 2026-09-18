@@ -10,12 +10,14 @@ namespace NodeVision.Inference;
 /// <summary>
 /// Configuration for webcam capture.
 /// </summary>
+// DirectShow is the default so the device index matches CameraDeviceEnumerator, which lists devices
+// in DirectShow enumeration order.
 public sealed record CaptureConfig(
     int DeviceIndex = 0,
     int Width = 1280,
     int Height = 720,
     int Fps = 30,
-    VideoCaptureAPIs PreferredBackend = VideoCaptureAPIs.MSMF); // media foundatiuon api
+    VideoCaptureAPIs PreferredBackend = VideoCaptureAPIs.DSHOW);
 
 public sealed class WebcamCaptureEvents
 {

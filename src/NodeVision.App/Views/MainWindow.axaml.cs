@@ -47,9 +47,8 @@ public partial class MainWindow : Window
 
     private void LoadAvailableCameras()
     {
-        //Camera Device Option found in Core
         IReadOnlyList<CameraDeviceOption> availableCameras =
-            GetAvailableCameraDevices();
+            CameraDeviceEnumerator.Enumerate();
 
         CameraDeviceComboBox.ItemsSource = availableCameras;
 
@@ -187,15 +186,5 @@ public partial class MainWindow : Window
         _webcamFrameBuffer.Dispose();
 
         base.OnClosed(e);
-    }
-    
-    private IReadOnlyList<CameraDeviceOption> GetAvailableCameraDevices()
-    {
-        return new List<CameraDeviceOption>
-        {
-            new(0, "Camera 1"),
-            new(1, "Camera 2"),
-            new(2, "Camera 3")
-        };
     }
 }

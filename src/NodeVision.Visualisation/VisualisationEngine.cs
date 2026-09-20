@@ -43,6 +43,7 @@ namespace NodeVision.Visualisation
             Refresh(0f); // present the initial state, so nothing animates in on the first frame
         }
 
+        // the basic updater that just refreshes the display
         public void Update(float deltaTime)
         {
             _time += deltaTime;

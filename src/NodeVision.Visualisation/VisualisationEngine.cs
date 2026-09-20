@@ -22,6 +22,9 @@ namespace NodeVision.Visualisation
         public Vector2 CameraPosition { get; set; }
         public float CameraZoom { get; set; } = 1f;
 
+        /// <summary>Size of the render viewport in pixels; used to resolve screen-space scene events.</summary>
+        public Vector2 ViewportSize { get; set; }
+
         public NodeLayout CurrentLayout { get; } = new();
 
         public VisualizationEngine()
@@ -46,6 +49,41 @@ namespace NodeVision.Visualisation
 
             Refresh(deltaTime);
             SyncLayout();
+        }
+
+        /// <summary>
+        /// Applies the scene events accumulated since the last frame, then runs the frame. The scene
+        /// is only ever mutated here, on the visualisation loop, never on the gesture/inference thread.
+        /// </summary>
+        public void Update(float deltaTime, IReadOnlyList<SceneEvent> sceneEvents)
+        {
+            foreach (var sceneEvent in sceneEvents)
+                ApplySceneEvent(sceneEvent);
+
+            Update(deltaTime);
+        }
+
+        private void ApplySceneEvent(SceneEvent sceneEvent)
+        {
+            switch (sceneEvent)
+            {
+                case PanSceneEvent pan:
+                    Pan(pan.ScreenDelta);
+                    break;
+
+                case ZoomSceneEvent zoom:
+                    ZoomAt(zoom.Amount, zoom.ScreenFocalPoint, ViewportSize);
+                    break;
+
+                case ExpandSceneEvent expand:
+                    if (HitTestNode(expand.CanvasPosition) is { } nodeId)
+                        ToggleExpanded(nodeId);
+                    break;
+
+                case ResetSceneEvent:
+                    ResetCamera();
+                    break;
+            }
         }
 
         /// <summary>

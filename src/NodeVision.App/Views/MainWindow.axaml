@@ -76,5 +76,19 @@
             </Border>
         </Border>
 
+        <!-- Keyboard gesture test overlay: key mapping while the debug source is active -->
+        <Border x:Name="DebugGestureOverlay"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="12"
+                Padding="10,8"
+                CornerRadius="6"
+                Background="#CC000000">
+            <TextBlock x:Name="DebugGestureText"
+                       Foreground="White"
+                       FontSize="13"
+                       TextWrapping="Wrap"/>
+        </Border>
+
     </Grid>
 </Window>

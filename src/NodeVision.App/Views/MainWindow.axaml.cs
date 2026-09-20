@@ -4,8 +4,10 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using NodeVision.App.Integration;
 using NodeVision.Core;
 using NodeVision.Inference;
 using NodeVision.Visualisation;
@@ -16,6 +18,19 @@ public partial class MainWindow : Window
 {
     private readonly VisualizationEngine _visualizationEngine = new();
     private readonly WebcamFrameRingBuffer _webcamFrameBuffer = new(4);
+
+    // Glue between the ML loop and the visualisation loop: a gesture source pushes GestureEvents into
+    // the queue, and the render tick drains them, maps them to SceneEvents, then hands them to the
+    // engine.
+    private KeyboardGestureSource? _gestureSource; //TODO: switch out with HandGestureSource once models ready
+    
+    private readonly GestureEventQueue _gestureEvents = new();
+    // TODO: make an actual Gesture mapper; this just returns an empty list always
+    private readonly IGestureToSceneMapper _gestureToSceneMapper = new NullGestureToSceneMapper();
+    private readonly List<GestureEvent> _pendingGestures = new();
+    private readonly List<SceneEvent> _pendingSceneEvents = new();
+
+    private Vector2 _pointerPosition;
 
     private WebcamCaptureService? _webcamCaptureService;
     private DispatcherTimer? _renderTimer;
@@ -35,6 +50,36 @@ public partial class MainWindow : Window
                 _visualizationEngine.ToggleExpanded(nodeId);
         };
         SceneViewControl.ZoomRequested += (delta, focalPoint) => _visualizationEngine.ZoomAt(delta, focalPoint, SceneViewControl.ViewportSize);
+
+        _gestureSource = new KeyboardGestureSource();
+        _gestureSource.GestureAvailable += _gestureEvents.Enqueue;
+        _gestureSource.Start();
+        DebugGestureText.Text = _gestureSource.BuildDebugText();
+
+        SceneViewControl.PointerMoved += (_, e) =>
+        {
+            var point = e.GetPosition(SceneViewControl);
+            _pointerPosition = new Vector2((float)point.X, (float)point.Y);
+        };
+
+        KeyDown += OnWindowKeyDown;
+    }
+
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_gestureSource is null)
+            return;
+
+        var viewport = SceneViewControl.ViewportSize;
+        if (viewport.X <= 0f || viewport.Y <= 0f)
+            return;
+
+        var normalized = new Vector2(_pointerPosition.X / viewport.X, _pointerPosition.Y / viewport.Y);
+        if (_gestureSource.TryTrigger(e.Key, normalized) is null)
+            return;
+
+        DebugGestureText.Text = _gestureSource.BuildDebugText();
+        e.Handled = true;
     }
 
     private void OnWindowLoaded(object? sender, RoutedEventArgs e)
@@ -137,8 +182,10 @@ public partial class MainWindow : Window
             var deltaTime = (float)(now - lastTick).TotalSeconds;
             lastTick = now;
 
+            _visualizationEngine.ViewportSize = SceneViewControl.ViewportSize;
+
             // Clamped so a stall does not jump an animation straight to its end.
-            _visualizationEngine.Update(Math.Min(deltaTime, 0.1f));
+            _visualizationEngine.Update(Math.Min(deltaTime, 0.1f), DrainGestureEvents());
 
             SceneViewControl.CameraTranslation =
                 _visualizationEngine.CameraPosition;
@@ -155,6 +202,22 @@ public partial class MainWindow : Window
         };
 
         _renderTimer.Start();
+    }
+
+    /// <summary>
+    /// Drains everything the gesture source has queued since the last frame and maps it to scene
+    /// events, so both are processed as a batch inside this tick's engine update.
+    /// </summary>
+    private IReadOnlyList<SceneEvent> DrainGestureEvents()
+    {
+        _pendingGestures.Clear();
+        _gestureEvents.Drain(_pendingGestures);
+
+        _pendingSceneEvents.Clear();
+        foreach (var gesture in _pendingGestures)
+            _pendingSceneEvents.AddRange(_gestureToSceneMapper.Map(gesture));
+
+        return _pendingSceneEvents;
     }
 
     private void OnWebcamFrameCaptured(WebcamFrame frame)

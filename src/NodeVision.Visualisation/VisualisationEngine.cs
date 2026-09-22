@@ -9,10 +9,11 @@ namespace NodeVision.Visualisation
     {
         private readonly PresentationState _presentation = new();
         private readonly List<ISceneBehaviour> _behaviours = new();
-        private readonly SceneGraph _graph;
+        private SceneGraph _graph;
         private float _time;
 
-        public Scene Scene { get; }
+        public Scene Scene { get; private set; }
+        
 
         /// <summary>
         /// Parent/child structure and the per-node reveal animation for that scene.
@@ -41,6 +42,27 @@ namespace NodeVision.Visualisation
                 behaviour.Build(_graph);
 
             Refresh(0f); // present the initial state, so nothing animates in on the first frame
+        }
+        
+        public void LoadScene(Scene scene)
+        {
+            ArgumentNullException.ThrowIfNull(scene);
+
+            Scene = scene;
+
+            _graph = SceneGraph.Build(Scene);
+            _graph.ApplyDrawOrder(Scene);
+
+            CurrentLayout.Positions.Clear();
+
+            foreach (var behaviour in _behaviours)
+            {
+                behaviour.Build(_graph);
+            }
+
+            Refresh(0f);
+            SyncLayout();
+            ResetCamera();
         }
 
         // the basic updater that just refreshes the display

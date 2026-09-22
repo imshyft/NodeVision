@@ -11,11 +11,13 @@ using NodeVision.App.Integration;
 using NodeVision.Core;
 using NodeVision.Inference;
 using NodeVision.Visualisation;
+using Avalonia.Platform.Storage;
 
 namespace NodeVision.App.Views;
 
 public partial class MainWindow : Window
 {
+    private string? _selectedSaveFilePath;
     private readonly VisualizationEngine _visualizationEngine = new();
     private readonly WebcamFrameRingBuffer _webcamFrameBuffer = new(4);
 
@@ -122,26 +124,49 @@ public partial class MainWindow : Window
     {
         if (CameraDeviceComboBox.SelectedItem is not CameraDeviceOption selectedCamera)
         {
+            CameraStatusText.Text = "Please select a camera.";
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_selectedSaveFilePath))
+        {
+            SaveFileWarningText.Text =
+                "Please select a save file before continuing.";
+            SaveFileWarningText.IsVisible = true;
+            return;
+        }
+
+        SaveFileWarningText.IsVisible = false;
+
         ConfirmCameraButton.IsEnabled = false;
         CameraDeviceComboBox.IsEnabled = false;
-        CameraStatusText.Text = $"Starting {selectedCamera.DisplayName}...";
+        SelectSaveFileButton.IsEnabled = false;
+
+        CameraStatusText.Text =
+            $"Starting {selectedCamera.DisplayName}...";
 
         try
         {
+            Scene loadedScene = ProjectLoader.Load(_selectedSaveFilePath);
+
+            // The visualisation engine must now use the loaded scene.
+            _visualizationEngine.LoadScene(loadedScene);
+            SceneViewControl.Scene = loadedScene;
+
             await StartSelectedCameraAsync(selectedCamera);
 
             CameraPlaceholder.IsVisible = false;
             CameraSelectionOverlay.IsVisible = false;
             SceneViewControl.IsVisible = true;
+            
         }
         catch (Exception ex)
         {
-            CameraStatusText.Text = $"Unable to start camera: {ex.Message}";
+            CameraStatusText.Text =
+                $"Unable to start camera: {ex.Message}";
 
             CameraDeviceComboBox.IsEnabled = true;
+            SelectSaveFileButton.IsEnabled = true;
             ConfirmCameraButton.IsEnabled = true;
         }
     }
@@ -249,5 +274,46 @@ public partial class MainWindow : Window
         _webcamFrameBuffer.Dispose();
 
         base.OnClosed(e);
+    }
+    
+    private async void OnSelectSaveFileClick(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Select NodeVision save file",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("NodeVision project")
+                    {
+                        Patterns = new[] { "*.nodevision" }
+                    },
+                    FilePickerFileTypes.All
+                }
+            });
+
+        // The user cancelled the dialog.
+        if (files.Count == 0)
+            return;
+
+        var selectedFile = files[0];
+        var localPath = selectedFile.TryGetLocalPath();
+
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            _selectedSaveFilePath = null;
+            SaveFilePathText.Text = "Filepath: ...";
+            SaveFileWarningText.Text =
+                "The selected file does not have a valid local filepath.";
+            SaveFileWarningText.IsVisible = true;
+            return;
+        }
+
+        _selectedSaveFilePath = localPath;
+        SaveFilePathText.Text = $"Filepath: {_selectedSaveFilePath}";
+        SaveFileWarningText.IsVisible = false;
     }
 }

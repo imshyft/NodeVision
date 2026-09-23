@@ -93,8 +93,8 @@ function convertReactFlowToSaveFile(flow, version = 1) {
       id: numericId,
       name: label,
       position: {
-        x: Number(node.position.x),
-        y: Number(node.position.y),
+        x: Number(node.data?.position?.x || 0),
+        y: Number(node.data?.position?.y || 0),
       },
       content: cleanContent,
     };
@@ -127,13 +127,11 @@ function convertSaveFileToReactFlow(saveFile, nodeType = "sphere") {
   const nodes = (saveFile.nodes || []).map((node) => ({
     id: String(node.id),
     type: nodeType,
-    position: {
-      x: node.position.x,
-      y: node.position.y,
-    },
+    position: { x: 0, y: 0 }, // Dagre layout engine will overwrite this visually
     data: {
       label: node.name,
-      content: node.content, // Passes the text/image payload cleanly into React Flow
+      position: node.position, // Your custom saved coordinates stay safe here!
+      content: node.content, 
     },
   }));
 

@@ -1,37 +1,82 @@
 import { useState, useCallback, useEffect } from 'react';
-import { ReactFlow, addEdge, applyNodeChanges, applyEdgeChanges, Background, Controls, Panel, useEdgesState, useNodesState } from '@xyflow/react';
+import { ReactFlow, addEdge, Background, Controls, Panel, useEdgesState, useNodesState } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import Node from './ui/Node'; // The component from the previous step
+import Node from './ui/Node'; 
 import Dropdown from './ui/Dropdown';
 import PropertyPanel from './ui/PropertyPanel';
-import {uploadFileFallback, downloadFileFallback, convertReactFlowToSaveFile, convertSaveFileToReactFlow, getExtFromMime, uploadFileFallbackBinary, downloadFileFallbackBinary} from './utils'
+import {
+  uploadFileFallback, 
+  downloadFileFallback, 
+  convertReactFlowToSaveFile, 
+  convertSaveFileToReactFlow, 
+  getExtFromMime, 
+  uploadFileFallbackBinary, 
+  downloadFileFallbackBinary
+} from './utils';
 import JSZip from 'jszip';
-
+import dagre from 'dagre';
 
 // Register custom nodes
 const nodeTypes = { sphere: Node };
 
-// Initial setup with two spherical nodes connected by an edge
-const initialNodes = [
-  // { id: '1', type: 'sphere', position: { x: 250, y: 100 }, data: { label: 'Node 1' } },
-  // { id: '2', type: 'sphere', position: { x: 250, y: 300 }, data: { label: 'Node 2' } },
-];
+const initialNodes = [];
+const initialEdges = [];
 
-const initialEdges = [
-  // { id: 'e1-2', source: '1', target: '2', animated: true },
-];
+// --- DAGRE TREE LAYOUT FUNCTION ---
+// This function calculates the React Flow canvas positions based purely on the edges (connections).
+const getLayoutedElements = (nodes, edges, direction = 'TB') => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  
+  // rankdir 'TB' = Top to Bottom tree. You can use 'LR' for Left to Right.
+  dagreGraph.setGraph({ rankdir: direction, ranksep: 120, nodesep: 100 });
+
+  // Approximate dimensions of your sphere nodes (update if your nodes are larger)
+  const nodeWidth = 150; 
+  const nodeHeight = 150;
+
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+  });
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  const layoutedNodes = nodes.map((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    return {
+      ...node,
+      // React Flow requires a top-level "position". We calculate it here.
+      // Your custom, logical position should be saved safely inside `node.data.position`
+      position: {
+        x: nodeWithPosition.x - nodeWidth / 2,
+        y: nodeWithPosition.y - nodeHeight / 2,
+      },
+    };
+  });
+
+  return { nodes: layoutedNodes, edges };
+};
 
 export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
 
-  // const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
-  // const onEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
   const onConnect = useCallback((params) => setEdges((eds) => 
     addEdge({...params, animated: true}, eds)), 
     [setEdges]
   );
+
+  // Trigger to manually snap the current nodes into a tree structure
+  const onLayout = useCallback(() => {
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges);
+    setNodes([...layoutedNodes]);
+    setEdges([...layoutedEdges]);
+  }, [nodes, edges, setNodes, setEdges]);
 
   const onAddNode = useCallback(() => {
     setNodes((prevNodes) => {
@@ -45,8 +90,13 @@ export default function App() {
       const newNode = {
         id: String(nextId),
         type: 'sphere',
+        // This is a temporary visual placement; clicking "Auto-Layout" will snap it into the tree
         position: { x: 200 + offset, y: 150 + offset },
-        data: { label: `Node ${nextId}` },
+        data: { 
+          label: `Node ${nextId}`,
+          // STORE YOUR ACTUAL DOMAIN POSITION HERE so it ignores ReactFlow's layout
+          position: { x: 0, y: 0, z: 0 } 
+        },
       };
 
       return [...prevNodes, newNode];
@@ -75,7 +125,6 @@ export default function App() {
     );
   }, [setNodes]);
 
-  // Remove node and dependent edges
   const onDeleteNode = useCallback((id) => {
     setNodes((nds) => nds.filter((node) => node.id !== id));
     setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
@@ -85,31 +134,30 @@ export default function App() {
   const onExport = async () => {
     const zip = new JSZip();
     const assetsFolder = zip.folder("assets");
+    
+    // Deep copy nodes before exporting
+    const exportNodes = JSON.parse(JSON.stringify(nodes)).map(node => {
+      delete node.position; 
+      delete node.selected;
+      delete node.dragging;
+      delete node.width;
+      delete node.height;
 
-    const exportNodes = JSON.parse(JSON.stringify(nodes));
-
-    console.log(nodes);
+      return node;
+    });
 
     exportNodes.forEach(async (node) => {
       if (node.data?.content?.type === "image") {
         const path = node.data.content.path; 
         const blobUrl = node.data.content.blobUrl;
         
-        // CASE A: It was imported from a previous ZIP (it has a blobUrl)
         if (blobUrl) {
-          // Fetch the binary data directly from the RAM URL
           const response = await fetch(blobUrl);
           const blobData = await response.blob();
-          
-          // Re-add it to the new ZIP
           const fileName = path.replace('assets/', '');
           assetsFolder.file(fileName, blobData);
-          
-          // Clean up the payload so the blobUrl doesn't get saved into the JSON text
           delete node.data.content.blobUrl;
         } 
-        
-        // CASE B: It's a brand new upload (it's a Base64 string)
         else if (path && path.startsWith('data:')) {
           const [header, base64Data] = path.split(',');
           const mime = header.split(':')[1].split(';')[0];
@@ -128,7 +176,6 @@ export default function App() {
     });
 
     zip.file("nodes.json", JSON.stringify(payload, null, 2));
-    // const fileContent = JSON.stringify(payload, null, 2);
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
 
@@ -140,11 +187,8 @@ export default function App() {
         extension: 'nodevision'
       });
 
-      if (result.success) {
-        console.log('Exported to: ', result.filePath);
-      } else {
-        console.log('Export failed: ', result.error || result.message);
-      }
+      if (result.success) console.log('Exported to: ', result.filePath);
+      else console.log('Export failed: ', result.error || result.message);
     } else {
       downloadFileFallback(zipBlob, 'export.nodevision', 'application/zip');
     }
@@ -161,31 +205,9 @@ export default function App() {
 
     if (window.electronAPI) {
       const result = await window.electronAPI.loadFile({extensions: ['nodevision']});
-
-      // if (result.success) {
-      //   try {
-      //     const parsedData = JSON.parse(result.data);
-      //     const flowData = convertSaveFileToReactFlow(parsedData);
-      //     if (flowData.nodes) {
-      //       // console.log(flowData)
-      //       setNodes(flowData.nodes);
-      //     }
-      //     if (flowData.edges) {
-      //       setEdges(flowData.edges);
-      //     }
-      //     console.log("Loaded Successfully")
-      //   } catch (err) {
-      //     alert("Failed to parse JSON File: Invalid Format");
-      //   }
-      // } 
-
-      if (result.success) {
-        fileData = result.data;
-      } else {
-        return;
-      }
+      if (result.success) fileData = result.data;
+      else return;
     } else {
-      // console.log("Upload fallback called");
       fileData = await new Promise((resolve) => uploadFileFallbackBinary(resolve));
     }
 
@@ -193,34 +215,33 @@ export default function App() {
 
     try {
       const zip = await JSZip.loadAsync(fileData);
-
       const jsonString = await zip.file("nodes.json").async("string");
       const parsedData = JSON.parse(jsonString);
       const flowData = convertSaveFileToReactFlow(parsedData);
 
       if (flowData.nodes) {
-        const newlyLoadedMedia = [];
-
         for (const node of flowData.nodes) {
           if (node.data?.content?.type == "image") {
             const path = node.data.content.path;
-
             if (path.startsWith('assets/')) {
               const file = zip.file(path);
               if (file) {
                 const blobData = await file.async("blob");
                 const objectUrl = URL.createObjectURL(blobData);
-
                 node.data.content.blobUrl = objectUrl;
               }
             }
           }
         }
 
-        setNodes(flowData.nodes);
-      }
-      if (flowData.edges) {
-        setEdges(flowData.edges);
+        // Apply Tree Layout dynamically based on edges during import!
+        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+            flowData.nodes, 
+            flowData.edges || []
+        );
+
+        setNodes(layoutedNodes);
+        if (flowData.edges) setEdges(layoutedEdges);
       }
     } catch (err) {
       console.error(err);
@@ -229,16 +250,9 @@ export default function App() {
   }
 
   const menuActions = [
-    {
-      id: 1,
-      label: "Export File",
-      action: onExport
-    },
-    {
-      id: 2,
-      label: "Import File",
-      action: onImport
-    }
+    { id: 1, label: "Export File", action: onExport },
+    { id: 2, label: "Import File", action: onImport },
+    { id: 3, label: "Auto-Layout Tree", action: onLayout } // Added to menu
   ];
 
   return (
@@ -257,18 +271,11 @@ export default function App() {
         >
           <Panel position='top-left'>
             <div style={{display: 'flex', gap: '8px'}}>
-              <Dropdown 
-                items={menuActions}
-              >
-
-              </Dropdown>
+              <Dropdown items={menuActions} />
               <button
-
-              onClick={onAddNode}
+                onClick={onAddNode}
                 className='dropdown-button'
-                style={{
-                    minWidth: 'auto'
-                }}
+                style={{ minWidth: 'auto' }}
               >
                   Add Node
               </button>

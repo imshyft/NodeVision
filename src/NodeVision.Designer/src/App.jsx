@@ -289,6 +289,8 @@ export default function App() {
       {selectedNodeId && (
           <PropertyPanel
             selectedNode={nodes.find((node) => node.id == selectedNodeId)}
+            nodes={nodes}
+            edges={edges}
             onUpdateNode={onUpdateNode}
             onDeleteNode={onDeleteNode}
             onClose={() => setSelectedNodeId(null)}

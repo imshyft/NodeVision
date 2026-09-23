@@ -10,6 +10,7 @@ namespace NodeVision.Core;
 public static class ProjectLoader
 {
     private const string ProjectFileName = "project.json";
+    private static string? _temporaryAssetsDirectory;
 
     public static Scene Load(string filePath)
     {
@@ -58,6 +59,7 @@ public static class ProjectLoader
         // Images need real filesystem paths because ImageContent currently
         // stores a filepath. They are therefore extracted to a temporary folder.
         string extractionDirectory = CreateExtractionDirectory();
+        _temporaryAssetsDirectory = extractionDirectory;
 
         try
         {
@@ -119,14 +121,7 @@ public static class ProjectLoader
         }
         catch
         {
-            // Loading failed, so the extracted assets are unnecessary.
-            if (Directory.Exists(extractionDirectory))
-            {
-                Directory.Delete(
-                    extractionDirectory,
-                    recursive: true);
-            }
-
+            CleanupTemporaryAssets();
             throw;
         }
     }
@@ -236,5 +231,34 @@ public static class ProjectLoader
         Directory.CreateDirectory(directory);
 
         return directory;
+    }
+    
+    public static void CleanupTemporaryAssets()
+    {
+        if (string.IsNullOrWhiteSpace(_temporaryAssetsDirectory))
+            return;
+
+        try
+        {
+            if (Directory.Exists(_temporaryAssetsDirectory))
+            {
+                Directory.Delete(
+                    _temporaryAssetsDirectory,
+                    recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // A renderer may still briefly have an image open.
+            // Windows can clean the remaining temporary files later.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Do not prevent the application from closing.
+        }
+        finally
+        {
+            _temporaryAssetsDirectory = null;
+        }
     }
 }

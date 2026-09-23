@@ -272,6 +272,8 @@ public partial class MainWindow : Window
 
         _webcamCaptureService?.Dispose();
         _webcamFrameBuffer.Dispose();
+        
+        ProjectLoader.CleanupTemporaryAssets();
 
         base.OnClosed(e);
     }

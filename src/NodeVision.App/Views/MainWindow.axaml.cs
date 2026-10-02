@@ -25,8 +25,7 @@ public partial class MainWindow : Window
     private KeyboardGestureSource? _gestureSource; //TODO: switch out with HandGestureSource once models ready
     
     private readonly GestureEventQueue _gestureEvents = new();
-    // TODO: make an actual Gesture mapper; this just returns an empty list always
-    private readonly IGestureToSceneMapper _gestureToSceneMapper = new NullGestureToSceneMapper();
+    private readonly IGestureToSceneMapper _gestureToSceneMapper;
     private readonly List<GestureEvent> _pendingGestures = new();
     private readonly List<SceneEvent> _pendingSceneEvents = new();
 
@@ -50,6 +49,8 @@ public partial class MainWindow : Window
                 _visualizationEngine.ToggleExpanded(nodeId);
         };
         SceneViewControl.ZoomRequested += (delta, focalPoint) => _visualizationEngine.ZoomAt(delta, focalPoint, SceneViewControl.ViewportSize);
+
+        _gestureToSceneMapper = new GestureToSceneMapper(_visualizationEngine, () => SceneViewControl.ViewportSize);
 
         _gestureSource = new KeyboardGestureSource();
         _gestureSource.GestureAvailable += _gestureEvents.Enqueue;

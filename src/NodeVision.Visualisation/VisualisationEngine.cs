@@ -77,8 +77,13 @@ namespace NodeVision.Visualisation
                     break;
 
                 case ExpandSceneEvent expand:
-                    if (HitTestNode(expand.CanvasPosition) is { } nodeId)
-                        ToggleExpanded(nodeId);
+                    if (HitTestNode(expand.CanvasPosition) is { } expandNodeId)
+                        SetExpanded(expandNodeId, true);
+                    break;
+
+                case CollapseSceneEvent collapse:
+                    if (HitTestNode(collapse.CanvasPosition) is { } collapseNodeId)
+                        SetExpanded(collapseNodeId, false);
                     break;
 
                 case ResetSceneEvent:
@@ -136,6 +141,11 @@ namespace NodeVision.Visualisation
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
         public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);
+
+        /// <summary>
+        /// Expands or collapses a node without toggling, so a gesture can express each direction.
+        /// </summary>
+        public void SetExpanded(int nodeId, bool expanded) => Expansion.SetExpanded(nodeId, expanded);
 
         /// <summary>
         /// The topmost visible node under a canvas-space point, or null. Pointer input has to be

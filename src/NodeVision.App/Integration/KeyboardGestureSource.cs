@@ -17,12 +17,12 @@ public sealed class KeyboardGestureSource : IGestureSource
 
     private static readonly Binding[] Bindings =
     {
-        new("1", GestureKind.Point, GesturePhase.Started, "Point"),
-        new("2", GestureKind.Fist, GesturePhase.Started, "Fist"),
-        new("3", GestureKind.OpenHand, GesturePhase.Started, "Open hand"),
-        new("4", GestureKind.Pinch, GesturePhase.Started, "Pinch"),
-        new("5", GestureKind.Pinch, GesturePhase.Updated, "Pinch hold"),
-        new("6", GestureKind.Pinch, GesturePhase.Ended, "Release"),
+        new("1", GestureKind.Point, GesturePhase.Started, "Pan"),
+        new("2", GestureKind.Fist, GesturePhase.Started, "Collapse"),
+        new("3", GestureKind.OpenHand, GesturePhase.Started, "Expand"),
+        new("4", GestureKind.Pinch, GesturePhase.Started, "Zoom in"),
+        new("5", GestureKind.Pinch, GesturePhase.Updated, "Zoom in"),
+        new("6", GestureKind.Pinch, GesturePhase.Ended, "Zoom out"),
     };
 
     private string? _last;

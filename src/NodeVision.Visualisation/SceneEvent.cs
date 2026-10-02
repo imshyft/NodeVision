@@ -14,4 +14,6 @@ public sealed record ZoomSceneEvent(float Amount, Vector2 ScreenFocalPoint) : Sc
 
 public sealed record ExpandSceneEvent(Vector2 CanvasPosition) : SceneEvent;
 
+public sealed record CollapseSceneEvent(Vector2 CanvasPosition) : SceneEvent;
+
 public sealed record ResetSceneEvent : SceneEvent;

@@ -27,8 +27,7 @@ public partial class MainWindow : Window
     private KeyboardGestureSource? _gestureSource; //TODO: switch out with HandGestureSource once models ready
     
     private readonly GestureEventQueue _gestureEvents = new();
-    // TODO: make an actual Gesture mapper; this just returns an empty list always
-    private readonly IGestureToSceneMapper _gestureToSceneMapper = new NullGestureToSceneMapper();
+    private readonly IGestureToSceneMapper _gestureToSceneMapper;
     private readonly List<GestureEvent> _pendingGestures = new();
     private readonly List<SceneEvent> _pendingSceneEvents = new();
 
@@ -40,6 +39,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        _gestureToSceneMapper = new GestureToSceneMapper(
+            () => SceneViewControl.ViewportSize,
+            screenPoint => _visualizationEngine.ScreenToCanvas(screenPoint, SceneViewControl.ViewportSize));
 
         SceneViewControl.SetWebcamSource(_webcamFrameBuffer);
 

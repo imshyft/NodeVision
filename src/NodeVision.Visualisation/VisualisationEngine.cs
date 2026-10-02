@@ -100,7 +100,12 @@ namespace NodeVision.Visualisation
 
                 case ExpandSceneEvent expand:
                     if (HitTestNode(expand.CanvasPosition) is { } nodeId)
-                        ToggleExpanded(nodeId);
+                        Expansion.SetExpanded(nodeId, true);
+                    break;
+
+                case CollapseSceneEvent collapse:
+                    if (HitTestNode(collapse.CanvasPosition) is { } collapseNodeId)
+                        Expansion.SetExpanded(collapseNodeId, false);
                     break;
 
                 case ResetSceneEvent:

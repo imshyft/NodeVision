@@ -13,16 +13,16 @@ namespace NodeVision.App.Integration;
 /// </summary>
 public sealed class KeyboardGestureSource : IGestureSource
 {
-    private readonly record struct Binding(string Key, GestureKind Kind, GesturePhase Phase, string Label);
+    private readonly record struct Binding(string Key, GestureKind Kind, GesturePhase Phase, float Magnitude, string Label);
 
     private static readonly Binding[] Bindings =
     {
-        new("1", GestureKind.Point, GesturePhase.Started, "Pan"),
-        new("2", GestureKind.Fist, GesturePhase.Started, "Collapse"),
-        new("3", GestureKind.OpenHand, GesturePhase.Started, "Expand"),
-        new("4", GestureKind.Pinch, GesturePhase.Started, "Zoom in"),
-        new("5", GestureKind.Pinch, GesturePhase.Updated, "Zoom in"),
-        new("6", GestureKind.Pinch, GesturePhase.Ended, "Zoom out"),
+        new("1", GestureKind.Point, GesturePhase.Started, 1f, "Pan"),
+        new("2", GestureKind.Fist, GesturePhase.Started, 1f, "Collapse"),
+        new("3", GestureKind.OpenHand, GesturePhase.Started, 1f, "Expand"),
+        new("4", GestureKind.Pinch, GesturePhase.Started, 1f, "Zoom in"),
+        new("5", GestureKind.Pinch, GesturePhase.Updated, 1f, "Zoom in"),
+        new("6", GestureKind.Pinch, GesturePhase.Ended, -1f, "Zoom out"),
     };
 
     private string? _last;
@@ -52,7 +52,7 @@ public sealed class KeyboardGestureSource : IGestureSource
             if (binding.Key != name)
                 continue;
 
-            GestureAvailable?.Invoke(new GestureEvent(binding.Kind, binding.Phase, normalizedPosition, 1f));
+            GestureAvailable?.Invoke(new GestureEvent(binding.Kind, binding.Phase, normalizedPosition, binding.Magnitude));
             _last = $"{binding.Label} @ ({normalizedPosition.X:0.00}, {normalizedPosition.Y:0.00})";
             return binding.Label;
         }

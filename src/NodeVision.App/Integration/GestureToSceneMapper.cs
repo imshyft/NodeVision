@@ -18,14 +18,15 @@ public interface IGestureToSceneMapper
 
 /// <summary>
 /// The gesture-to-scene mapping:
-///   Pinch     -> zoom (in while held, out on release);
+///   Pinch     -> zoom, direction and amount from the (signed) magnitude;
 ///   OpenHand  -> expand the node under the pointer;
 ///   Fist      -> collapse the node under the pointer;
 ///   Point     -> pan toward the pointed spot.
 /// </summary>
 public sealed class GestureToSceneMapper : IGestureToSceneMapper
 {
-    private const float ZoomStep = 0.12f;
+    private const float ZoomStep = 0.25f;
+    private const float ZoomGain = 3f;
     private const float PanFactor = 0.15f;
 
     private readonly VisualizationEngine _engine;
@@ -45,10 +46,10 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
         switch (gesture.Kind)
         {
             case GestureKind.Pinch:
-                // Held pinches zoom in; releasing zooms back out. A negative magnitude (used by the
-                // debug source) overrides the phase so a single press can zoom either way.
-                var direction = gesture.Phase == GesturePhase.Ended || gesture.Magnitude < 0f ? -1f : 1f;
-                return new[] { new ZoomSceneEvent(ZoomStep * direction, screen) };
+                // Magnitude carries both direction and size: the hand source sends the change in
+                // pinch strength, the keyboard sends +/-1 for a whole step.
+                var amount = Math.Clamp(gesture.Magnitude * ZoomGain, -ZoomStep, ZoomStep);
+                return new[] { new ZoomSceneEvent(amount, screen) };
 
             case GestureKind.Point:
                 var centre = viewport * 0.5f;

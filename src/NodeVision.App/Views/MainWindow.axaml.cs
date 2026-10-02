@@ -19,15 +19,18 @@ public partial class MainWindow : Window
     private readonly VisualizationEngine _visualizationEngine = new();
     private readonly WebcamFrameRingBuffer _webcamFrameBuffer = new(4);
 
-    // Glue between the ML loop and the visualisation loop: a gesture source pushes GestureEvents into
+    // Glue between the ML loop and the visualisation loop: gesture sources push GestureEvents into
     // the queue, and the render tick drains them, maps them to SceneEvents, then hands them to the
-    // engine.
-    private KeyboardGestureSource? _gestureSource; //TODO: switch out with HandGestureSource once models ready
-    
+    // engine. The hand-tracking source runs alongside the keyboard one once the models load.
     private readonly GestureEventQueue _gestureEvents = new();
     private readonly IGestureToSceneMapper _gestureToSceneMapper;
     private readonly List<GestureEvent> _pendingGestures = new();
     private readonly List<SceneEvent> _pendingSceneEvents = new();
+
+    private KeyboardGestureSource? _keyboardSource;
+    private HandGestureSource? _handSource;
+    private InferenceEngine? _inferenceEngine;
+    private string _handStatus = "hand: starting";
 
     private Vector2 _pointerPosition;
 
@@ -52,10 +55,10 @@ public partial class MainWindow : Window
 
         _gestureToSceneMapper = new GestureToSceneMapper(_visualizationEngine, () => SceneViewControl.ViewportSize);
 
-        _gestureSource = new KeyboardGestureSource();
-        _gestureSource.GestureAvailable += _gestureEvents.Enqueue;
-        _gestureSource.Start();
-        DebugGestureText.Text = _gestureSource.BuildDebugText();
+        _keyboardSource = new KeyboardGestureSource();
+        _keyboardSource.GestureAvailable += _gestureEvents.Enqueue;
+        _keyboardSource.Start();
+        UpdateDebugOverlay();
 
         SceneViewControl.PointerMoved += (_, e) =>
         {
@@ -68,7 +71,7 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_gestureSource is null)
+        if (_keyboardSource is null)
             return;
 
         var viewport = SceneViewControl.ViewportSize;
@@ -76,10 +79,10 @@ public partial class MainWindow : Window
             return;
 
         var normalized = new Vector2(_pointerPosition.X / viewport.X, _pointerPosition.Y / viewport.Y);
-        if (_gestureSource.TryTrigger(e.Key, normalized) is null)
+        if (_keyboardSource.TryTrigger(e.Key, normalized) is null)
             return;
 
-        DebugGestureText.Text = _gestureSource.BuildDebugText();
+        UpdateDebugOverlay();
         e.Handled = true;
     }
 
@@ -89,6 +92,40 @@ public partial class MainWindow : Window
 
         LoadAvailableCameras();
         StartRenderLoop();
+        StartHandGesturePipeline();
+    }
+
+    /// <summary>
+    /// Starts the hand-tracking source on the same webcam ring buffer the render loop uses. It needs
+    /// the ONNX models in the Models folder; if they are missing the pipeline stays off and the app
+    /// keeps running with the keyboard source only.
+    /// </summary>
+    private void StartHandGesturePipeline()
+    {
+        try
+        {
+            _inferenceEngine = new InferenceEngine(_webcamFrameBuffer);
+            _handSource = new HandGestureSource(_inferenceEngine);
+            _handSource.GestureAvailable += _gestureEvents.Enqueue;
+            _handSource.Start();
+            _handStatus = "hand: tracking";
+        }
+        catch (Exception ex)
+        {
+            _inferenceEngine?.Dispose();
+            _inferenceEngine = null;
+            _handSource = null;
+            _handStatus = "hand: unavailable";
+            Console.WriteLine($"[Gesture] Hand tracking unavailable: {ex.Message}");
+        }
+
+        UpdateDebugOverlay();
+    }
+
+    private void UpdateDebugOverlay()
+    {
+        DebugGestureText.Text = (_keyboardSource?.BuildDebugText() ?? string.Empty)
+            + Environment.NewLine + _handStatus;
     }
 
     private void LoadAvailableCameras()
@@ -246,6 +283,8 @@ public partial class MainWindow : Window
     {
         _renderTimer?.Stop();
 
+        _handSource?.Stop();
+        _inferenceEngine?.Dispose();
         _webcamCaptureService?.Dispose();
         _webcamFrameBuffer.Dispose();
 

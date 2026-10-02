@@ -30,6 +30,11 @@ public class ImageRenderer : SkiaObjectRenderer
             imageCommand.Size.X,
             imageCommand.Size.Y);
 
-        canvas.DrawImage(image, dest, Sampling);
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(255, 255, 255, (byte)(Math.Clamp(imageCommand.Opacity, 0f, 1f) * 255f))
+        };
+
+        canvas.DrawImage(image, dest, Sampling, paint);
     }
 }

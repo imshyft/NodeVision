@@ -175,7 +175,7 @@ export default function App() {
       edges: edges
     });
 
-    zip.file("nodes.json", JSON.stringify(payload, null, 2));
+    zip.file("project.json", JSON.stringify(payload, null, 2));
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
 
@@ -215,7 +215,7 @@ export default function App() {
 
     try {
       const zip = await JSZip.loadAsync(fileData);
-      const jsonString = await zip.file("nodes.json").async("string");
+      const jsonString = await zip.file("project.json").async("string");
       const parsedData = JSON.parse(jsonString);
       const flowData = convertSaveFileToReactFlow(parsedData);
 
@@ -243,6 +243,8 @@ export default function App() {
         setNodes(layoutedNodes);
         if (flowData.edges) setEdges(layoutedEdges);
       }
+
+      console.log(flowData.nodes)
     } catch (err) {
       console.error(err);
       alert("Failed to parse File: Invalid Format or Corrupted");

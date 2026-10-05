@@ -146,7 +146,7 @@ export default function App() {
       return node;
     });
 
-    exportNodes.forEach(async (node) => {
+    for (const node of exportNodes) {
       if (node.data?.content?.type === "image") {
         const path = node.data.content.path; 
         const blobUrl = node.data.content.blobUrl;
@@ -168,7 +168,7 @@ export default function App() {
           node.data.content.path = `assets/${fileName}`;
         }
       }
-    });
+    };
 
     const payload = convertReactFlowToSaveFile({
       nodes: exportNodes,

@@ -7,9 +7,7 @@ using NodeVision.Visualisation;
 namespace NodeVision.App.Integration;
 
 /// <summary>
-/// Turns a GestureEvent into the SceneEvents the visualisation loop executes. Positions arrive
-/// normalised to the camera frame (0..1) and are converted to the screen/canvas spaces the engine
-/// works in.
+/// Turns a GestureEvent into the SceneEvents the visualisation loop executes.
 /// </summary>
 public interface IGestureToSceneMapper
 {
@@ -17,52 +15,114 @@ public interface IGestureToSceneMapper
 }
 
 /// <summary>
-/// The gesture-to-scene mapping:
-///   Pinch     -> zoom, direction and amount from the (signed) magnitude;
-///   OpenHand  -> expand the node under the pointer;
-///   Fist      -> collapse the node under the pointer;
-///   Point     -> pan toward the pointed spot.
+/// Placeholder mapper: forwards nothing, so the transport (queue -> drain -> engine.Update) can run
+/// end to end before any mapping exists.
+/// </summary>
+public sealed class NullGestureToSceneMapper : IGestureToSceneMapper
+{
+    public IReadOnlyList<SceneEvent> Map(GestureEvent gesture) => Array.Empty<SceneEvent>();
+}
+
+/// <summary>
+/// Converts camera-normalised gesture readings into the coordinate systems expected by the scene.
+/// State is retained only for continuous gestures: pinch strength becomes a zoom delta and point
+/// movement becomes a pan delta. Open-hand and fist are edge-triggered expand and collapse requests.
 /// </summary>
 public sealed class GestureToSceneMapper : IGestureToSceneMapper
 {
-    private const float ZoomStep = 0.25f;
-    private const float ZoomGain = 3f;
-    private const float PanFactor = 0.15f;
+    private static readonly IReadOnlyList<SceneEvent> NoEvents = Array.Empty<SceneEvent>();
 
-    private readonly VisualizationEngine _engine;
-    private readonly Func<Vector2> _viewport;
+    private readonly Func<Vector2> _viewportSize;
+    private readonly Func<Vector2, Vector2> _screenToCanvas;
 
-    public GestureToSceneMapper(VisualizationEngine engine, Func<Vector2> viewport)
+    private bool _pinchActive;
+    private float _lastPinchStrength;
+    private Vector2? _lastPointPosition;
+
+    /// <param name="viewportSize">Returns the current scene viewport in screen pixels.</param>
+    /// <param name="screenToCanvas">Converts a screen-pixel point to the current canvas point.</param>
+    public GestureToSceneMapper(
+        Func<Vector2> viewportSize,
+        Func<Vector2, Vector2> screenToCanvas)
     {
-        _engine = engine;
-        _viewport = viewport;
+        _viewportSize = viewportSize ?? throw new ArgumentNullException(nameof(viewportSize));
+        _screenToCanvas = screenToCanvas ?? throw new ArgumentNullException(nameof(screenToCanvas));
     }
 
     public IReadOnlyList<SceneEvent> Map(GestureEvent gesture)
     {
-        var viewport = _viewport();
-        var screen = new Vector2(gesture.Position.X * viewport.X, gesture.Position.Y * viewport.Y);
-
-        switch (gesture.Kind)
+        return gesture.Kind switch
         {
-            case GestureKind.Pinch:
-                // Magnitude carries both direction and size: the hand source sends the change in
-                // pinch strength, the keyboard sends +/-1 for a whole step.
-                var amount = Math.Clamp(gesture.Magnitude * ZoomGain, -ZoomStep, ZoomStep);
-                return new[] { new ZoomSceneEvent(amount, screen) };
+            GestureKind.Pinch => MapPinch(gesture),
+            GestureKind.Point => MapPoint(gesture),
+            GestureKind.OpenHand when gesture.Phase == GesturePhase.Started =>
+                new SceneEvent[] { new ExpandSceneEvent(_screenToCanvas(ToScreen(gesture.Position))) },
+            GestureKind.Fist when gesture.Phase == GesturePhase.Started =>
+                new SceneEvent[] { new CollapseSceneEvent(_screenToCanvas(ToScreen(gesture.Position))) },
+            _ => NoEvents,
+        };
+    }
 
-            case GestureKind.Point:
-                var centre = viewport * 0.5f;
-                return new[] { new PanSceneEvent((centre - screen) * PanFactor) };
-
-            case GestureKind.OpenHand:
-                return new[] { new ExpandSceneEvent(_engine.ScreenToCanvas(screen, viewport)) };
-
-            case GestureKind.Fist:
-                return new[] { new CollapseSceneEvent(_engine.ScreenToCanvas(screen, viewport)) };
-
-            default:
-                return Array.Empty<SceneEvent>();
+    private IReadOnlyList<SceneEvent> MapPinch(GestureEvent gesture)
+    {
+        if (gesture.Phase == GesturePhase.Ended)
+        {
+            _pinchActive = false;
+            return NoEvents;
         }
+
+        var strength = Math.Clamp(gesture.Magnitude, 0f, 1f);
+        if (gesture.Phase == GesturePhase.Started || !_pinchActive)
+        {
+            _pinchActive = true;
+            _lastPinchStrength = strength;
+            return NoEvents;
+        }
+
+        var zoomDelta = strength - _lastPinchStrength;
+        _lastPinchStrength = strength;
+        if (MathF.Abs(zoomDelta) < 0.001f)
+            return NoEvents;
+
+        return new SceneEvent[] { new ZoomSceneEvent(zoomDelta, ToScreen(gesture.Position)) };
+    }
+
+    private IReadOnlyList<SceneEvent> MapPoint(GestureEvent gesture)
+    {
+        if (gesture.Phase == GesturePhase.Ended)
+        {
+            _lastPointPosition = null;
+            return NoEvents;
+        }
+
+        if (gesture.Phase == GesturePhase.Started || _lastPointPosition is null)
+        {
+            _lastPointPosition = gesture.Position;
+            return NoEvents;
+        }
+
+        var previous = _lastPointPosition.Value;
+        _lastPointPosition = gesture.Position;
+
+        var viewport = _viewportSize();
+        if (viewport.X <= 0f || viewport.Y <= 0f)
+            return NoEvents;
+
+        var screenDelta = new Vector2(
+            (gesture.Position.X - previous.X) * viewport.X,
+            (gesture.Position.Y - previous.Y) * viewport.Y);
+
+        if (screenDelta.LengthSquared < 0.01f)
+            return NoEvents;
+
+        return new SceneEvent[] { new PanSceneEvent(screenDelta) };
+    }
+
+    private Vector2 ToScreen(Vector2 normalizedPosition)
+    {
+        var viewport = _viewportSize();
+        return new Vector2(
+            Math.Clamp(normalizedPosition.X, 0f, 1f) * viewport.X,
+            Math.Clamp(normalizedPosition.Y, 0f, 1f) * viewport.Y);
     }
 }

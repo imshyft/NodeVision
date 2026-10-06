@@ -9,10 +9,11 @@ namespace NodeVision.Visualisation
     {
         private readonly PresentationState _presentation = new();
         private readonly List<ISceneBehaviour> _behaviours = new();
-        private readonly SceneGraph _graph;
+        private SceneGraph _graph;
         private float _time;
 
-        public Scene Scene { get; }
+        public Scene Scene { get; private set; }
+        
 
         /// <summary>
         /// Parent/child structure and the per-node reveal animation for that scene.
@@ -41,6 +42,27 @@ namespace NodeVision.Visualisation
                 behaviour.Build(_graph);
 
             Refresh(0f); // present the initial state, so nothing animates in on the first frame
+        }
+        
+        public void LoadScene(Scene scene)
+        {
+            ArgumentNullException.ThrowIfNull(scene);
+
+            Scene = scene;
+
+            _graph = SceneGraph.Build(Scene);
+            _graph.ApplyDrawOrder(Scene);
+
+            CurrentLayout.Positions.Clear();
+
+            foreach (var behaviour in _behaviours)
+            {
+                behaviour.Build(_graph);
+            }
+
+            Refresh(0f);
+            SyncLayout();
+            ResetCamera();
         }
 
         // the basic updater that just refreshes the display
@@ -77,13 +99,13 @@ namespace NodeVision.Visualisation
                     break;
 
                 case ExpandSceneEvent expand:
-                    if (HitTestNode(expand.CanvasPosition) is { } expandNodeId)
-                        SetExpanded(expandNodeId, true);
+                    if (HitTestNode(expand.CanvasPosition) is { } nodeId)
+                        Expansion.SetExpanded(nodeId, true);
                     break;
 
                 case CollapseSceneEvent collapse:
                     if (HitTestNode(collapse.CanvasPosition) is { } collapseNodeId)
-                        SetExpanded(collapseNodeId, false);
+                        Expansion.SetExpanded(collapseNodeId, false);
                     break;
 
                 case ResetSceneEvent:
@@ -141,11 +163,6 @@ namespace NodeVision.Visualisation
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
         public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);
-
-        /// <summary>
-        /// Expands or collapses a node without toggling, so a gesture can express each direction.
-        /// </summary>
-        public void SetExpanded(int nodeId, bool expanded) => Expansion.SetExpanded(nodeId, expanded);
 
         /// <summary>
         /// The topmost visible node under a canvas-space point, or null. Pointer input has to be

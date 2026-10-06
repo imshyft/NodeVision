@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Numerics;
 using System.Text.Json;
 
@@ -8,80 +9,127 @@ namespace NodeVision.Core;
 
 public static class ProjectLoader
 {
+    private const string ProjectFileName = "project.json";
+    private static string? _temporaryAssetsDirectory;
+
     public static Scene Load(string filePath)
     {
-        string json = File.ReadAllText(filePath);
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException(
+                "The NodeVision project file could not be found.",
+                filePath);
+        }
 
-        ProjectSaveDto? saveFile =
-            JsonSerializer.Deserialize<ProjectSaveDto>(
-                json,
-                new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-
-        if (saveFile is null)
+        if (!string.Equals(
+                Path.GetExtension(filePath),
+                ".nodevision",
+                StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "Could not load the project file.");
+                "The selected file is not a .nodevision project.");
         }
 
-        Scene scene = new();
+        using ZipArchive archive = ZipFile.OpenRead(filePath);
 
-        Dictionary<int, Node> nodesById = new();
+        ZipArchiveEntry? projectEntry =
+            archive.GetEntry(ProjectFileName);
 
-        // First create all nodes
-        foreach (NodeDto nodeDto in saveFile.Nodes)
+        if (projectEntry is null)
         {
-            Node node = new()
-            {
-                Id = nodeDto.Id,
-                NodeName = nodeDto.Name,
-                Position = new Vector2(
-                    nodeDto.Position.X,
-                    nodeDto.Position.Y),
-                Content = ConvertContent(nodeDto.Content)
-            };
-
-            scene.AddObject(node);
-            nodesById.Add(node.Id, node);
+            throw new InvalidOperationException(
+                $"The NodeVision file does not contain {ProjectFileName}.");
         }
 
-        // Then create connections
-        foreach (ConnectionDto connectionDto in saveFile.Connections)
+        ProjectSaveDto saveFile;
+
+        using (Stream jsonStream = projectEntry.Open())
         {
-            if (!nodesById.TryGetValue(
-                    connectionDto.ParentNodeId,
-                    out Node? parentNode))
+            saveFile =
+                JsonSerializer.Deserialize<ProjectSaveDto>(
+                    jsonStream,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    })
+                ?? throw new InvalidOperationException(
+                    "Could not load the project data.");
+        }
+
+        // Images need real filesystem paths because ImageContent currently
+        // stores a filepath. They are therefore extracted to a temporary folder.
+        string extractionDirectory = CreateExtractionDirectory();
+        _temporaryAssetsDirectory = extractionDirectory;
+
+        try
+        {
+            Scene scene = new();
+            Dictionary<int, Node> nodesById = new();
+
+            // First create all nodes.
+            foreach (NodeDto nodeDto in saveFile.Nodes)
             {
-                throw new InvalidOperationException(
-                    $"Parent node {connectionDto.ParentNodeId} does not exist.");
+                Node node = new()
+                {
+                    Id = nodeDto.Id,
+                    NodeName = nodeDto.Name,
+                    Position = new Vector2(
+                        nodeDto.Position.X,
+                        nodeDto.Position.Y),
+                    Content = ConvertContent(
+                        nodeDto.Content,
+                        archive,
+                        extractionDirectory)
+                };
+
+                scene.AddObject(node);
+                nodesById.Add(node.Id, node);
             }
 
-            if (!nodesById.TryGetValue(
-                    connectionDto.ChildNodeId,
-                    out Node? childNode))
+            // Then create all connections.
+            foreach (ConnectionDto connectionDto in saveFile.Connections)
             {
-                throw new InvalidOperationException(
-                    $"Child node {connectionDto.ChildNodeId} does not exist.");
+                if (!nodesById.TryGetValue(
+                        connectionDto.ParentNodeId,
+                        out Node? parentNode))
+                {
+                    throw new InvalidOperationException(
+                        $"Parent node {connectionDto.ParentNodeId} does not exist.");
+                }
+
+                if (!nodesById.TryGetValue(
+                        connectionDto.ChildNodeId,
+                        out Node? childNode))
+                {
+                    throw new InvalidOperationException(
+                        $"Child node {connectionDto.ChildNodeId} does not exist.");
+                }
+
+                Connection connection = new()
+                {
+                    Id = connectionDto.Id,
+                    ParentNodeId = connectionDto.ParentNodeId,
+                    ChildNodeId = connectionDto.ChildNodeId,
+                    ParentNode = parentNode,
+                    ChildNode = childNode
+                };
+
+                scene.AddObject(connection);
             }
 
-            Connection connection = new()
-            {
-                Id = connectionDto.Id,
-                ParentNodeId = connectionDto.ParentNodeId,
-                ChildNodeId = connectionDto.ChildNodeId,
-                ParentNode = parentNode,
-                ChildNode = childNode
-            };
-
-            scene.AddObject(connection);
+            return scene;
         }
-
-        return scene;
+        catch
+        {
+            CleanupTemporaryAssets();
+            throw;
+        }
     }
 
-    private static NodeContent ConvertContent(ContentDto content)
+    private static NodeContent ConvertContent(
+        ContentDto content,
+        ZipArchive archive,
+        string extractionDirectory)
     {
         return content.Type.ToLowerInvariant() switch
         {
@@ -92,11 +140,125 @@ public static class ProjectLoader
 
             "image" => new ImageContent
             {
-                FilePath = content.Path ?? string.Empty
+                FilePath = ExtractImage(
+                    content.Path,
+                    archive,
+                    extractionDirectory)
             },
 
             _ => throw new InvalidOperationException(
                 $"Unknown content type: {content.Type}")
         };
+    }
+
+    private static string ExtractImage(
+        string? assetPath,
+        ZipArchive archive,
+        string extractionDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(assetPath))
+        {
+            throw new InvalidOperationException(
+                "An image node does not specify an asset path.");
+        }
+
+        // ZIP paths should always use forward slashes.
+        string normalizedPath =
+            assetPath.Replace('\\', '/').TrimStart('/');
+
+        if (!normalizedPath.StartsWith(
+                "assets/",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Image path must be inside the assets folder: {assetPath}");
+        }
+
+        ZipArchiveEntry? assetEntry =
+            archive.GetEntry(normalizedPath);
+
+        if (assetEntry is null)
+        {
+            throw new InvalidOperationException(
+                $"The asset '{normalizedPath}' is missing from the project.");
+        }
+
+        string relativeSystemPath =
+            normalizedPath.Replace(
+                '/',
+                Path.DirectorySeparatorChar);
+
+        string destinationPath = Path.GetFullPath(
+            Path.Combine(
+                extractionDirectory,
+                relativeSystemPath));
+
+        string extractionRoot =
+            Path.GetFullPath(extractionDirectory)
+            + Path.DirectorySeparatorChar;
+
+        // Prevent malicious paths such as assets/../../some-file.
+        if (!destinationPath.StartsWith(
+                extractionRoot,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The asset path is invalid: {assetPath}");
+        }
+
+        string? destinationDirectory =
+            Path.GetDirectoryName(destinationPath);
+
+        if (destinationDirectory is not null)
+        {
+            Directory.CreateDirectory(destinationDirectory);
+        }
+
+        assetEntry.ExtractToFile(
+            destinationPath,
+            overwrite: true);
+
+        return destinationPath;
+    }
+
+    private static string CreateExtractionDirectory()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "NodeVision",
+            Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(directory);
+
+        return directory;
+    }
+    
+    public static void CleanupTemporaryAssets()
+    {
+        if (string.IsNullOrWhiteSpace(_temporaryAssetsDirectory))
+            return;
+
+        try
+        {
+            if (Directory.Exists(_temporaryAssetsDirectory))
+            {
+                Directory.Delete(
+                    _temporaryAssetsDirectory,
+                    recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // A renderer may still briefly have an image open.
+            // Windows can clean the remaining temporary files later.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Do not prevent the application from closing.
+        }
+        finally
+        {
+            _temporaryAssetsDirectory = null;
+        }
     }
 }

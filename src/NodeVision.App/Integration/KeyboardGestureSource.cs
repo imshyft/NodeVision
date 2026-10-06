@@ -8,21 +8,22 @@ namespace NodeVision.App.Integration;
 
 /// <summary>
 /// Development gesture source driven by number keys, using the mouse position as the gesture
-/// location. Stands in for HandGestureSource so the gesture-to-scene transport can be exercised
-/// without a hand-tracking model: point with the mouse, press a key to emit the gesture there.
+/// location. It emits the sequences the GestureToSceneMapper expects: a point press anchors at the
+/// viewport centre and moves to the pointer, and a pinch press runs a small signed strength step.
 /// </summary>
 public sealed class KeyboardGestureSource : IGestureSource
 {
-    private readonly record struct Binding(string Key, GestureKind Kind, GesturePhase Phase, float Magnitude, string Label);
+    private const float ZoomStep = 0.25f;
+
+    private readonly record struct Binding(string Key, GestureKind Kind, float Amount, string Label);
 
     private static readonly Binding[] Bindings =
     {
-        new("1", GestureKind.Point, GesturePhase.Started, 1f, "Pan"),
-        new("2", GestureKind.Fist, GesturePhase.Started, 1f, "Collapse"),
-        new("3", GestureKind.OpenHand, GesturePhase.Started, 1f, "Expand"),
-        new("4", GestureKind.Pinch, GesturePhase.Started, 1f, "Zoom in"),
-        new("5", GestureKind.Pinch, GesturePhase.Updated, 1f, "Zoom in"),
-        new("6", GestureKind.Pinch, GesturePhase.Ended, -1f, "Zoom out"),
+        new("1", GestureKind.Point, 0f, "Pan"),
+        new("2", GestureKind.Fist, 0f, "Collapse"),
+        new("3", GestureKind.OpenHand, 0f, "Expand"),
+        new("4", GestureKind.Pinch, ZoomStep, "Zoom in"),
+        new("5", GestureKind.Pinch, -ZoomStep, "Zoom out"),
     };
 
     private string? _last;
@@ -52,12 +53,35 @@ public sealed class KeyboardGestureSource : IGestureSource
             if (binding.Key != name)
                 continue;
 
-            GestureAvailable?.Invoke(new GestureEvent(binding.Kind, binding.Phase, normalizedPosition, binding.Magnitude));
+            Emit(binding, normalizedPosition);
             _last = $"{binding.Label} @ ({normalizedPosition.X:0.00}, {normalizedPosition.Y:0.00})";
             return binding.Label;
         }
 
         return null;
+    }
+
+    private void Emit(Binding binding, Vector2 position)
+    {
+        switch (binding.Kind)
+        {
+            case GestureKind.Point:
+                // Anchor at the centre, then move to the pointer, so the mapper pans by that offset.
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Started, new Vector2(0.5f, 0.5f), 1f));
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, position, 1f));
+                break;
+
+            case GestureKind.Pinch:
+                // Run a small signed strength step so the mapper reads a zoom delta.
+                var previous = binding.Amount > 0f ? 0f : -binding.Amount;
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Started, position, previous));
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Updated, position, previous + binding.Amount));
+                break;
+
+            default:
+                GestureAvailable?.Invoke(new GestureEvent(binding.Kind, GesturePhase.Started, position, 1f));
+                break;
+        }
     }
 
     public string BuildDebugText()
@@ -77,7 +101,6 @@ public sealed class KeyboardGestureSource : IGestureSource
         Key.D3 or Key.NumPad3 => "3",
         Key.D4 or Key.NumPad4 => "4",
         Key.D5 or Key.NumPad5 => "5",
-        Key.D6 or Key.NumPad6 => "6",
         _ => null,
     };
 }

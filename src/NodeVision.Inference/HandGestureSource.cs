@@ -4,31 +4,26 @@ namespace NodeVision.Inference;
 
 /// <summary>
 /// Feeds the hand-tracking pipeline (InferenceEngine -> GestureProcessor) into the gesture-event
-/// transport. Pinch is reported as the frame-to-frame change in pinch strength, so closing the pinch
-/// zooms one way and opening it zooms the other; holding a steady pinch emits nothing.
+/// transport.
 /// </summary>
 public sealed class HandGestureSource : IGestureSource
 {
-    // Below this strength change the pinch counts as steady, so a hand resting at a constant pinch
-    // does not keep emitting.
-    private const float PinchDeltaThreshold = 0.02f;
-
     private readonly InferenceEngine _inferenceEngine;
     private readonly GestureProcessor _gestureProcessor = new();
 
     private int _frameWidth = 1;
     private int _frameHeight = 1;
-    private float _lastPinchStrength;
     private Vector2 _lastPinchPosition = new(0.5f, 0.5f);
-    private HandState _handState = HandState.Unknown;
+    private Vector2 _lastPointPosition = new(0.5f, 0.5f);
+    private bool _wasPointing;
 
     public HandGestureSource(InferenceEngine inferenceEngine)
     {
         _inferenceEngine = inferenceEngine;
 
-        // _gestureProcessor.PinchChanged += OnPinchChanged;
+        _gestureProcessor.PinchChanged += OnPinchChanged;
+        _gestureProcessor.PinchTriggered += OnPinchTriggered;
         _gestureProcessor.HandStateChanged += OnHandStateChanged;
-        _gestureProcessor.HandPositionChanged += OnHandPositionChanged;
     }
 
     public event Action<GestureEvent>? GestureAvailable;
@@ -47,44 +42,52 @@ public sealed class HandGestureSource : IGestureSource
     {
         _frameWidth = result.FrameWidth;
         _frameHeight = result.FrameHeight;
+
+        if (result.HandLandmarks.Length > 8)
+            _lastPointPosition = Normalize(new Vector2(result.HandLandmarks[8].X, result.HandLandmarks[8].Y));
+
         _gestureProcessor.Update(result.HandLandmarks);
+
+        var isPointing = result.HandLandmarks.Length > 8 &&
+                         _gestureProcessor.LastDiagnostics?.Confirmed == HandState.Pointing;
+
+        if (isPointing)
+            GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, _lastPointPosition, 1f));
+        else if (_wasPointing)
+            GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Ended, _lastPointPosition, 0f));
+
+        _wasPointing = isPointing;
     }
 
     private void OnPinchChanged(PinchEvent pinch)
     {
         _lastPinchPosition = Normalize(pinch.Position);
+        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Updated, _lastPinchPosition, pinch.Strength));
+    }
 
-        var delta = pinch.Strength - _lastPinchStrength;
-        _lastPinchStrength = pinch.Strength;
-
-        if (MathF.Abs(delta) < PinchDeltaThreshold)
-            return;
-
-        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Updated, _lastPinchPosition, delta));
+    private void OnPinchTriggered(PinchEvent pinch)
+    {
+        var position = Normalize(pinch.Position);
+        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Started, position, pinch.Strength));
     }
 
     private void OnHandStateChanged(HandStateChangedEvent change)
     {
-        _handState = change.NewState;
-
         var kind = change.NewState switch
         {
             HandState.Open => GestureKind.OpenHand,
             HandState.Closed => GestureKind.Fist,
+            HandState.Pointing => GestureKind.Point,
             _ => (GestureKind?)null,
         };
 
         if (kind is { } gestureKind)
-            GestureAvailable?.Invoke(new GestureEvent(gestureKind, GesturePhase.Started, _lastPinchPosition, 1f));
-    }
-
-    private void OnHandPositionChanged(Vector2 pixel)
-    {
-        // Only the pointing finger pans, and it does so continuously with the tracked hand position.
-        if (_handState != HandState.Pointing)
-            return;
-
-        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, Normalize(pixel), 1f));
+        {
+            var position = gestureKind is GestureKind.Point or GestureKind.OpenHand
+                ? _lastPointPosition
+                : _lastPinchPosition;
+            GestureAvailable?.Invoke(new GestureEvent(gestureKind, GesturePhase.Started, position, 1f));
+        }
     }
 
     private Vector2 Normalize(Vector2 pixel) => new(pixel.X / _frameWidth, pixel.Y / _frameHeight);

@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.11.3",
+    "dagre": "^0.8.5",
     "jszip": "^3.10.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

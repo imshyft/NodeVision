@@ -54,6 +54,16 @@ export default function PropertyPanel({ selectedNode, nodes = [], edges = [], on
     });
   };
 
+  const handleGestureTypeChange = (e) => {
+    const newGestureType = e.target.value;
+    onUpdateNode(id, {
+      data: {
+        ...data,
+        gestureType: newGestureType
+      }
+    })
+  }
+
   const handleContentTypeChange = (e) => {
     const newType = e.target.value;
     onUpdateNode(id, {
@@ -143,6 +153,19 @@ export default function PropertyPanel({ selectedNode, nodes = [], edges = [], on
 
         {/* Wrap Content inputs in a div that visually disables them if !isLeaf */}
         <div style={{ opacity: isLeaf ? 1 : 0.4, pointerEvents: isLeaf ? 'auto' : 'none' }}>
+          <div style={styles.section}>
+            <label style={styles.label}>Gesture Type</label>
+            <select
+              style={styles.select}
+              value={data?.gestureType || 'pinch'}
+              onChange={handleGestureTypeChange}
+              disabled={!isLeaf}
+            >
+              <option value="pinch">Pinch</option>
+              <option value="select">Select</option>
+            </select>
+          </div>
+          
           <div style={styles.section}>
             <label style={styles.label}>Content Type</label>
             <select

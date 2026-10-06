@@ -154,7 +154,7 @@ export default function App() {
         if (blobUrl) {
           const response = await fetch(blobUrl);
           const blobData = await response.blob();
-          const fileName = path.replace('assets/', '');
+          const fileName = path ? path.replace('assets/', '') : `node_${node.id}.png`;
           assetsFolder.file(fileName, blobData);
           delete node.data.content.blobUrl;
         } 
@@ -197,12 +197,14 @@ export default function App() {
   const onImport = async () => {
     let fileData;
 
+    // Clean up session image storage
     nodes.forEach(node => {
       if (node.data?.content?.blobUrl) {
         URL.revokeObjectURL(node.data.content.blobUrl);
       }
     });
 
+    // Open upload window
     if (window.electronAPI) {
       const result = await window.electronAPI.loadFile({extensions: ['nodevision']});
       if (result.success) fileData = result.data;

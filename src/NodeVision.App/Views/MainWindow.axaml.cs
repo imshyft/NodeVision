@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private string _handStatus = "hand: starting";
 
     private Vector2 _pointerPosition;
+    private readonly HashSet<Key> _heldKeys = new();
 
     private WebcamCaptureService? _webcamCaptureService;
     private DispatcherTimer? _renderTimer;
@@ -71,11 +72,16 @@ public partial class MainWindow : Window
         };
 
         KeyDown += OnWindowKeyDown;
+        KeyUp += OnWindowKeyUp;
     }
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         if (_keyboardSource is null)
+            return;
+
+        // Ignore OS key auto-repeat: holding a key acts once, not on every repeat tick.
+        if (!_heldKeys.Add(e.Key))
             return;
 
         var viewport = SceneViewControl.ViewportSize;
@@ -88,6 +94,12 @@ public partial class MainWindow : Window
 
         UpdateDebugOverlay();
         e.Handled = true;
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        _heldKeys.Remove(e.Key);
+        _keyboardSource?.Release(e.Key);
     }
 
     private void OnWindowLoaded(object? sender, RoutedEventArgs e)
@@ -247,7 +259,11 @@ public partial class MainWindow : Window
             var deltaTime = (float)(now - lastTick).TotalSeconds;
             lastTick = now;
 
-            _visualizationEngine.ViewportSize = SceneViewControl.ViewportSize;
+            var viewport = SceneViewControl.ViewportSize;
+            _visualizationEngine.ViewportSize = viewport;
+
+            if (viewport.X > 0f && viewport.Y > 0f)
+                _keyboardSource?.Update(new Vector2(_pointerPosition.X / viewport.X, _pointerPosition.Y / viewport.Y));
 
             // Clamped so a stall does not jump an animation straight to its end.
             _visualizationEngine.Update(Math.Min(deltaTime, 0.1f), DrainGestureEvents());

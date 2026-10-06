@@ -19,7 +19,17 @@ public class NodeDto
 
     public PositionDto Position { get; set; } = new();
 
+    /// <summary>Optional card size; when omitted a default is chosen from the content type.</summary>
+    public SizeDto? Size { get; set; }
+
     public ContentDto Content { get; set; } = new();
+}
+
+public class SizeDto
+{
+    public float X { get; set; }
+
+    public float Y { get; set; }
 }
 
 public class PositionDto

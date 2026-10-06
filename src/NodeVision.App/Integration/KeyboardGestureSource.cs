@@ -8,12 +8,16 @@ namespace NodeVision.App.Integration;
 
 /// <summary>
 /// Development gesture source driven by number keys, using the mouse position as the gesture
-/// location. It emits the sequences the GestureToSceneMapper expects: a point press anchors at the
-/// viewport centre and moves to the pointer, and a pinch press runs a small signed strength step.
+/// location. Point and pinch emit the sequences the GestureToSceneMapper expects; holding the pan key
+/// streams a steady pan each frame.
 /// </summary>
 public sealed class KeyboardGestureSource : IGestureSource
 {
     private const float ZoomStep = 0.25f;
+
+    // How far a single pan tap moves, and how much a held pan advances each frame.
+    private const float PanPressStep = 0.15f;
+    private const float PanHoldStep = 0.02f;
 
     private readonly record struct Binding(string Key, GestureKind Kind, float Amount, string Label);
 
@@ -27,6 +31,10 @@ public sealed class KeyboardGestureSource : IGestureSource
     };
 
     private string? _last;
+
+    private bool _panHeld;
+    private Vector2 _panPointer;
+    private Vector2 _panPoint;
 
     public event Action<GestureEvent>? GestureAvailable;
 
@@ -61,14 +69,43 @@ public sealed class KeyboardGestureSource : IGestureSource
         return null;
     }
 
+    /// <summary>
+    /// Called every frame with the current pointer. While the pan key is held this streams a steady
+    /// pan step toward the pointer, so the scene keeps moving without the OS key-repeat jumping.
+    /// </summary>
+    public void Update(Vector2 pointer)
+    {
+        if (!_panHeld)
+            return;
+
+        _panPointer = pointer;
+        _panPoint += (_panPointer - new Vector2(0.5f, 0.5f)) * PanHoldStep;
+        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, _panPoint, 1f));
+    }
+
+    /// <summary>Ends a hold started by <paramref name="key"/> (e.g. the pan key on release).</summary>
+    public void Release(Key key)
+    {
+        if (KeyName(key) != "1")
+            return;
+
+        _panHeld = false;
+        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Ended, _panPoint, 0f));
+    }
+
     private void Emit(Binding binding, Vector2 position)
     {
         switch (binding.Kind)
         {
             case GestureKind.Point:
-                // Anchor at the centre, then move to the pointer, so the mapper pans by that offset.
-                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Started, new Vector2(0.5f, 0.5f), 1f));
-                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, position, 1f));
+                // Anchor at the centre, then move part-way toward the pointer for an immediate step;
+                // Update() keeps advancing from there while the key is held.
+                var centre = new Vector2(0.5f, 0.5f);
+                _panPoint = centre + (position - centre) * PanPressStep;
+                _panPointer = position;
+                _panHeld = true;
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Started, centre, 1f));
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, _panPoint, 1f));
                 break;
 
             case GestureKind.Pinch:

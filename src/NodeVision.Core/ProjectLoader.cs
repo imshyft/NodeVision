@@ -10,6 +10,8 @@ namespace NodeVision.Core;
 public static class ProjectLoader
 {
     private const string ProjectFileName = "project.json";
+    private static readonly Vector2 DefaultTextNodeSize = new(320, 180);
+    private static readonly Vector2 DefaultImageNodeSize = new(420, 300);
     private static string? _temporaryAssetsDirectory;
 
     public static Scene Load(string filePath)
@@ -76,6 +78,7 @@ public static class ProjectLoader
                     Position = new Vector2(
                         nodeDto.Position.X,
                         nodeDto.Position.Y),
+                    Size = ResolveSize(nodeDto),
                     Content = ConvertContent(
                         nodeDto.Content,
                         archive,
@@ -124,6 +127,16 @@ public static class ProjectLoader
             CleanupTemporaryAssets();
             throw;
         }
+    }
+
+    private static Vector2 ResolveSize(NodeDto nodeDto)
+    {
+        if (nodeDto.Size is { } size && size.X > 0f && size.Y > 0f)
+            return new Vector2(size.X, size.Y);
+
+        return string.Equals(nodeDto.Content.Type, "image", StringComparison.OrdinalIgnoreCase)
+            ? DefaultImageNodeSize
+            : DefaultTextNodeSize;
     }
 
     private static NodeContent ConvertContent(

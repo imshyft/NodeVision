@@ -101,6 +101,12 @@ public sealed class GestureProcessor
     public event Action<PinchEvent>? PinchTriggered;
     public event Action<HandStateChangedEvent>? HandStateChanged;
 
+    /// <summary>
+    /// Index-fingertip position in original frame pixels, emitted every tracked frame. Used as the
+    /// cursor for pointing/panning, independent of the pinch reading.
+    /// </summary>
+    public event Action<Vector2>? HandPositionChanged;
+
     /// <summary>Last frame's raw classification - see <see cref="HandStateDiagnostics"/>. Null when no hand was tracked.</summary>
     public HandStateDiagnostics? LastDiagnostics { get; private set; }
 
@@ -136,12 +142,24 @@ public sealed class GestureProcessor
         }
 
         var normalizedDistance = Distance(thumbTip, indexTip) / handSize;
-        var strength = 1f - InverseLerpClamped(ClosedDistanceRatio, OpenDistanceRatio, normalizedDistance);
+
+        // Pinch only counts while the other three fingers are curled: with an open hand the thumb and
+        // index are naturally close enough to read as a pinch, which would zoom constantly.
+        var otherFingersCurled =
+            IsFingerCurled(wrist, landmarks[10], landmarks[12]) &&
+            IsFingerCurled(wrist, landmarks[14], landmarks[16]) &&
+            IsFingerCurled(wrist, landmarks[18], landmarks[20]);
+
+        var strength = otherFingersCurled
+            ? 1f - InverseLerpClamped(ClosedDistanceRatio, OpenDistanceRatio, normalizedDistance)
+            : 0f;
         var position = new Vector2((thumbTip.X + indexTip.X) / 2f, (thumbTip.Y + indexTip.Y) / 2f);
         var pinch = new PinchEvent(position, strength);
 
         PinchChanged?.Invoke(pinch);
         UpdateTriggerState(pinch);
+
+        HandPositionChanged?.Invoke(new Vector2(indexTip.X, indexTip.Y));
 
         var candidate = ClassifyHandState(landmarks, wrist, out var diagnosticsSoFar);
         UpdateHandState(candidate);

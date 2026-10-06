@@ -58,14 +58,32 @@ namespace NodeVision.Visualisation
         /// </summary>
         public void Update(float deltaTime, IReadOnlyList<SceneEvent> sceneEvents)
         {
-            foreach (var sceneEvent in sceneEvents)
-                ApplySceneEvent(sceneEvent);
+            // Indexed, not foreach: enumerating an IReadOnlyList boxes an enumerator every frame.
+            for (var i = 0; i < sceneEvents.Count; i++)
+                ApplySceneEvent(sceneEvents[i]);
+
+            EventsAppliedLastFrame = sceneEvents.Count;
 
             Update(deltaTime);
         }
 
+        /// <summary>How many scene events the last <c>Update(deltaTime, sceneEvents)</c> call applied.</summary>
+        public int EventsAppliedLastFrame { get; private set; }
+
+        /// <summary>
+        /// Milliseconds between the camera frame behind the most recently applied event (its
+        /// <see cref="SceneEvent.SourceTimestamp"/>) and the moment the engine applied it. Stays at its
+        /// last value for events that carry no timestamp.
+        /// </summary>
+        public double LastEventLatencyMs { get; private set; }
+
+        private bool HasViewport => ViewportSize.X > 0f && ViewportSize.Y > 0f;
+
         private void ApplySceneEvent(SceneEvent sceneEvent)
         {
+            if (sceneEvent.SourceTimestamp != 0)
+                LastEventLatencyMs = (Stopwatch.GetTimestamp() - sceneEvent.SourceTimestamp) * 1000.0 / Stopwatch.Frequency;
+
             switch (sceneEvent)
             {
                 case PanSceneEvent pan:
@@ -73,12 +91,22 @@ namespace NodeVision.Visualisation
                     break;
 
                 case ZoomSceneEvent zoom:
-                    ZoomAt(zoom.Amount, zoom.ScreenFocalPoint, ViewportSize);
+                    if (HasViewport)
+                        ZoomBy(zoom.Factor, zoom.ScreenFocalPoint, ViewportSize);
                     break;
 
                 case ExpandSceneEvent expand:
-                    if (HitTestNode(expand.CanvasPosition) is { } nodeId)
-                        ToggleExpanded(nodeId);
+                    if (HasViewport &&
+                        HitTestNode(ScreenToCanvas(expand.ScreenPosition, ViewportSize)) is { } expandId &&
+                        _graph.HasChildren(expandId))
+                        SetExpanded(expandId, true);
+                    break;
+
+                case CollapseSceneEvent collapse:
+                    if (HasViewport &&
+                        HitTestNode(ScreenToCanvas(collapse.ScreenPosition, ViewportSize)) is { } collapseId &&
+                        IsExpanded(collapseId))
+                        SetExpanded(collapseId, false);
                     break;
 
                 case ResetSceneEvent:
@@ -136,6 +164,16 @@ namespace NodeVision.Visualisation
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
         public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);
+
+        /// <summary>
+        /// Expands or collapses a node explicitly. Unlike <see cref="ToggleExpanded"/> this is idempotent,
+        /// so a repeated gesture cannot flip the state back. Unknown node ids are ignored.
+        /// </summary>
+        public void SetExpanded(int nodeId, bool expanded)
+        {
+            if (_graph.Contains(nodeId))
+                Expansion.SetExpanded(nodeId, expanded);
+        }
 
         /// <summary>
         /// The topmost visible node under a canvas-space point, or null. Pointer input has to be
@@ -209,6 +247,28 @@ namespace NodeVision.Visualisation
             Vector2 canvasFocalPoint = ScreenToCanvas(focalScreenPoint, viewportSize);
             CameraZoom = newZoom;
             
+            Vector2 center = viewportSize * 0.5f;
+            CameraPosition = canvasFocalPoint - (focalScreenPoint - center) / newZoom;
+        }
+
+        /// <summary>
+        /// Multiplies the zoom by <paramref name="factor"/> (above 1 zooms in) while keeping the canvas
+        /// point under <paramref name="focalScreenPoint"/> fixed. Non-finite or non-positive factors are
+        /// ignored, and the result is clamped to the zoom limits.
+        /// </summary>
+        public void ZoomBy(float factor, Vector2 focalScreenPoint, Vector2 viewportSize, float minZoom = 0.1f, float maxZoom = 10f)
+        {
+            if (!float.IsFinite(factor) || factor <= 0f)
+                return;
+
+            float oldZoom = CameraZoom;
+            float newZoom = MathF.Max(minZoom, MathF.Min(maxZoom, oldZoom * factor));
+            if (MathF.Abs(newZoom - oldZoom) < 0.0001f)
+                return;
+
+            Vector2 canvasFocalPoint = ScreenToCanvas(focalScreenPoint, viewportSize);
+            CameraZoom = newZoom;
+
             Vector2 center = viewportSize * 0.5f;
             CameraPosition = canvasFocalPoint - (focalScreenPoint - center) / newZoom;
         }

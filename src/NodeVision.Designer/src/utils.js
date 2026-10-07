@@ -97,6 +97,7 @@ function convertReactFlowToSaveFile(flow, version = 1) {
         y: Number(node.data?.position?.y || 0),
       },
       content: cleanContent,
+      gestureType: node.data?.gestureType
     };
   });
 
@@ -131,7 +132,8 @@ function convertSaveFileToReactFlow(saveFile, nodeType = "sphere") {
     data: {
       label: node.name,
       position: node.position, // Your custom saved coordinates stay safe here!
-      content: node.content, 
+      content: node.content,
+      gestureType: node.gestureType ? node.gestureType : "pinch" 
     },
   }));
 

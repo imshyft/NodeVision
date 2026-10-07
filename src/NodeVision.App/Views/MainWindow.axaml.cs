@@ -11,26 +11,31 @@ using NodeVision.App.Integration;
 using NodeVision.Core;
 using NodeVision.Inference;
 using NodeVision.Visualisation;
+using Avalonia.Platform.Storage;
 
 namespace NodeVision.App.Views;
 
 public partial class MainWindow : Window
 {
+    private string? _selectedSaveFilePath;
     private readonly VisualizationEngine _visualizationEngine = new();
     private readonly WebcamFrameRingBuffer _webcamFrameBuffer = new(4);
 
-    // Glue between the ML loop and the visualisation loop: a gesture source pushes GestureEvents into
+    // Glue between the ML loop and the visualisation loop: gesture sources push GestureEvents into
     // the queue, and the render tick drains them, maps them to SceneEvents, then hands them to the
-    // engine.
-    private KeyboardGestureSource? _gestureSource; //TODO: switch out with HandGestureSource once models ready
-    
+    // engine. The hand-tracking source runs alongside the keyboard one once the models load.
     private readonly GestureEventQueue _gestureEvents = new();
-    // TODO: make an actual Gesture mapper; this just returns an empty list always
-    private readonly IGestureToSceneMapper _gestureToSceneMapper = new NullGestureToSceneMapper();
+    private readonly IGestureToSceneMapper _gestureToSceneMapper;
     private readonly List<GestureEvent> _pendingGestures = new();
     private readonly List<SceneEvent> _pendingSceneEvents = new();
 
+    private KeyboardGestureSource? _keyboardSource;
+    private HandGestureSource? _handSource;
+    private InferenceEngine? _inferenceEngine;
+    private string _handStatus = "hand: starting";
+
     private Vector2 _pointerPosition;
+    private readonly HashSet<Key> _heldKeys = new();
 
     private WebcamCaptureService? _webcamCaptureService;
     private DispatcherTimer? _renderTimer;
@@ -38,6 +43,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        _gestureToSceneMapper = new GestureToSceneMapper(
+            () => SceneViewControl.ViewportSize,
+            screenPoint => _visualizationEngine.ScreenToCanvas(screenPoint, SceneViewControl.ViewportSize));
 
         SceneViewControl.SetWebcamSource(_webcamFrameBuffer);
 
@@ -51,10 +60,10 @@ public partial class MainWindow : Window
         };
         SceneViewControl.ZoomRequested += (delta, focalPoint) => _visualizationEngine.ZoomAt(delta, focalPoint, SceneViewControl.ViewportSize);
 
-        _gestureSource = new KeyboardGestureSource();
-        _gestureSource.GestureAvailable += _gestureEvents.Enqueue;
-        _gestureSource.Start();
-        DebugGestureText.Text = _gestureSource.BuildDebugText();
+        _keyboardSource = new KeyboardGestureSource();
+        _keyboardSource.GestureAvailable += _gestureEvents.Enqueue;
+        _keyboardSource.Start();
+        UpdateDebugOverlay();
 
         SceneViewControl.PointerMoved += (_, e) =>
         {
@@ -63,11 +72,16 @@ public partial class MainWindow : Window
         };
 
         KeyDown += OnWindowKeyDown;
+        KeyUp += OnWindowKeyUp;
     }
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_gestureSource is null)
+        if (_keyboardSource is null)
+            return;
+
+        // Ignore OS key auto-repeat: holding a key acts once, not on every repeat tick.
+        if (!_heldKeys.Add(e.Key))
             return;
 
         var viewport = SceneViewControl.ViewportSize;
@@ -75,11 +89,17 @@ public partial class MainWindow : Window
             return;
 
         var normalized = new Vector2(_pointerPosition.X / viewport.X, _pointerPosition.Y / viewport.Y);
-        if (_gestureSource.TryTrigger(e.Key, normalized) is null)
+        if (_keyboardSource.TryTrigger(e.Key, normalized) is null)
             return;
 
-        DebugGestureText.Text = _gestureSource.BuildDebugText();
+        UpdateDebugOverlay();
         e.Handled = true;
+    }
+
+    private void OnWindowKeyUp(object? sender, KeyEventArgs e)
+    {
+        _heldKeys.Remove(e.Key);
+        _keyboardSource?.Release(e.Key);
     }
 
     private void OnWindowLoaded(object? sender, RoutedEventArgs e)
@@ -88,6 +108,40 @@ public partial class MainWindow : Window
 
         LoadAvailableCameras();
         StartRenderLoop();
+        StartHandGesturePipeline();
+    }
+
+    /// <summary>
+    /// Starts the hand-tracking source on the same webcam ring buffer the render loop uses. It needs
+    /// the ONNX models in the Models folder; if they are missing the pipeline stays off and the app
+    /// keeps running with the keyboard source only.
+    /// </summary>
+    private void StartHandGesturePipeline()
+    {
+        try
+        {
+            _inferenceEngine = new InferenceEngine(_webcamFrameBuffer);
+            _handSource = new HandGestureSource(_inferenceEngine);
+            _handSource.GestureAvailable += _gestureEvents.Enqueue;
+            _handSource.Start();
+            _handStatus = "hand: tracking";
+        }
+        catch (Exception ex)
+        {
+            _inferenceEngine?.Dispose();
+            _inferenceEngine = null;
+            _handSource = null;
+            _handStatus = "hand: unavailable";
+            Console.WriteLine($"[Gesture] Hand tracking unavailable: {ex.Message}");
+        }
+
+        UpdateDebugOverlay();
+    }
+
+    private void UpdateDebugOverlay()
+    {
+        DebugGestureText.Text = (_keyboardSource?.BuildDebugText() ?? string.Empty)
+            + Environment.NewLine + _handStatus;
     }
 
     private void LoadAvailableCameras()
@@ -122,26 +176,49 @@ public partial class MainWindow : Window
     {
         if (CameraDeviceComboBox.SelectedItem is not CameraDeviceOption selectedCamera)
         {
+            CameraStatusText.Text = "Please select a camera.";
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_selectedSaveFilePath))
+        {
+            SaveFileWarningText.Text =
+                "Please select a save file before continuing.";
+            SaveFileWarningText.IsVisible = true;
+            return;
+        }
+
+        SaveFileWarningText.IsVisible = false;
+
         ConfirmCameraButton.IsEnabled = false;
         CameraDeviceComboBox.IsEnabled = false;
-        CameraStatusText.Text = $"Starting {selectedCamera.DisplayName}...";
+        SelectSaveFileButton.IsEnabled = false;
+
+        CameraStatusText.Text =
+            $"Starting {selectedCamera.DisplayName}...";
 
         try
         {
+            Scene loadedScene = ProjectLoader.Load(_selectedSaveFilePath);
+
+            // The visualisation engine must now use the loaded scene.
+            _visualizationEngine.LoadScene(loadedScene);
+            SceneViewControl.Scene = loadedScene;
+
             await StartSelectedCameraAsync(selectedCamera);
 
             CameraPlaceholder.IsVisible = false;
             CameraSelectionOverlay.IsVisible = false;
             SceneViewControl.IsVisible = true;
+            
         }
         catch (Exception ex)
         {
-            CameraStatusText.Text = $"Unable to start camera: {ex.Message}";
+            CameraStatusText.Text =
+                $"Unable to start camera: {ex.Message}";
 
             CameraDeviceComboBox.IsEnabled = true;
+            SelectSaveFileButton.IsEnabled = true;
             ConfirmCameraButton.IsEnabled = true;
         }
     }
@@ -182,7 +259,11 @@ public partial class MainWindow : Window
             var deltaTime = (float)(now - lastTick).TotalSeconds;
             lastTick = now;
 
-            _visualizationEngine.ViewportSize = SceneViewControl.ViewportSize;
+            var viewport = SceneViewControl.ViewportSize;
+            _visualizationEngine.ViewportSize = viewport;
+
+            if (viewport.X > 0f && viewport.Y > 0f)
+                _keyboardSource?.Update(new Vector2(_pointerPosition.X / viewport.X, _pointerPosition.Y / viewport.Y));
 
             // Clamped so a stall does not jump an animation straight to its end.
             _visualizationEngine.Update(Math.Min(deltaTime, 0.1f), DrainGestureEvents());
@@ -245,9 +326,54 @@ public partial class MainWindow : Window
     {
         _renderTimer?.Stop();
 
+        _handSource?.Stop();
+        _inferenceEngine?.Dispose();
         _webcamCaptureService?.Dispose();
         _webcamFrameBuffer.Dispose();
+        
+        ProjectLoader.CleanupTemporaryAssets();
 
         base.OnClosed(e);
+    }
+    
+    private async void OnSelectSaveFileClick(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "Select NodeVision save file",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("NodeVision project")
+                    {
+                        Patterns = new[] { "*.nodevision" }
+                    },
+                    FilePickerFileTypes.All
+                }
+            });
+
+        // The user cancelled the dialog.
+        if (files.Count == 0)
+            return;
+
+        var selectedFile = files[0];
+        var localPath = selectedFile.TryGetLocalPath();
+
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            _selectedSaveFilePath = null;
+            SaveFilePathText.Text = "Filepath: ...";
+            SaveFileWarningText.Text =
+                "The selected file does not have a valid local filepath.";
+            SaveFileWarningText.IsVisible = true;
+            return;
+        }
+
+        _selectedSaveFilePath = localPath;
+        SaveFilePathText.Text = $"Filepath: {_selectedSaveFilePath}";
+        SaveFileWarningText.IsVisible = false;
     }
 }

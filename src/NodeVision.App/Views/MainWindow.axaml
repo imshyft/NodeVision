@@ -59,6 +59,24 @@
                               PlaceholderText="Select a camera..."
                               SelectionChanged="OnCameraSelectionChanged"/>
 
+                    <TextBlock x:Name="SaveFilePathText"
+                               Text="Filepath: ..."
+                               Foreground="LightGray"
+                               TextWrapping="Wrap"/>
+
+                    <Button x:Name="SelectSaveFileButton"
+                            Content="Select save file..."
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Click="OnSelectSaveFileClick"/>
+
+                    <TextBlock x:Name="SaveFileWarningText"
+                               Text="Please select a save file before continuing."
+                               Foreground="#FF5252"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"
+                               IsVisible="False"/>
+
                     <TextBlock x:Name="CameraStatusText"
                                Foreground="LightGray"
                                TextWrapping="Wrap"

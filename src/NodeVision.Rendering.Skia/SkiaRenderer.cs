@@ -42,10 +42,19 @@ public class SkiaRenderer : Renderer
 
         foreach (var drawCommand in commands)
         {
-            if (_objectRenderers.TryGetValue(drawCommand.GetType(), out var renderer))
+            if (!_objectRenderers.TryGetValue(drawCommand.GetType(), out var renderer))
+                continue;
+
+            if (drawCommand.Clip is { } clip)
             {
-                renderer.DrawObject(drawCommand, _canvas);
+                _canvas.Save();
+                _canvas.ClipRect(SKRect.Create(clip.Position.X, clip.Position.Y, clip.Size.X, clip.Size.Y));
             }
+
+            renderer.DrawObject(drawCommand, _canvas);
+
+            if (drawCommand.Clip is not null)
+                _canvas.Restore();
         }
 
         _canvas.Restore();

@@ -24,12 +24,39 @@ public class ImageRenderer : SkiaObjectRenderer
 
         using var image = SKImage.FromBitmap(bitmap);
 
-        var dest = SKRect.Create(
+        var target = SKRect.Create(
             imageCommand.Position.X,
             imageCommand.Position.Y,
             imageCommand.Size.X,
             imageCommand.Size.Y);
 
-        canvas.DrawImage(image, dest, Sampling);
+        var dest = FitWithin(target, bitmap.Width, bitmap.Height);
+
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(255, 255, 255, (byte)(Math.Clamp(imageCommand.Opacity, 0f, 1f) * 255f))
+        };
+
+        canvas.DrawImage(image, dest, Sampling, paint);
+    }
+
+    /// <summary>
+    /// Scales the image to fit inside <paramref name="target"/> without distorting its aspect ratio,
+    /// centred on the target box.
+    /// </summary>
+    private static SKRect FitWithin(SKRect target, int imageWidth, int imageHeight)
+    {
+        if (imageWidth <= 0 || imageHeight <= 0 || target.Width <= 0f || target.Height <= 0f)
+            return target;
+
+        var scale = Math.Min(target.Width / imageWidth, target.Height / imageHeight);
+        var width = imageWidth * scale;
+        var height = imageHeight * scale;
+
+        return SKRect.Create(
+            target.Left + (target.Width - width) / 2f,
+            target.Top + (target.Height - height) / 2f,
+            width,
+            height);
     }
 }

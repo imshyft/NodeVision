@@ -28,6 +28,9 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
         var headerGap = NodeStyle.HeaderGap * metrics;
         var bodySize = NodeStyle.BodySize * metrics;
 
+        // Content is clipped to the card, so a long body or an image cannot spill past it.
+        var clip = new ClipRect(position, size);
+
         commands.Add(new RectangleRenderCommand
         {
             Colour = Fade(NodeStyle.Border, reveal),
@@ -61,19 +64,41 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
             Position = new Vector2(position.X + textInset, position.Y + padding),
             Size = new Vector2(textWidth, headerSize),
             MaxWidth = textWidth,
-            Anchor = TextAnchor.Top
+            Anchor = TextAnchor.Top,
+            Clip = clip
         });
 
-        commands.Add(new TextRenderCommand
+        var detailTop = position.Y + padding + headerSize + headerGap;
+        var detailWidth = size.X - textInset - padding;
+        var detailHeight = MathF.Max(0f, size.Y - padding - (padding + headerSize + headerGap));
+
+        switch (node.Content)
         {
-            Text = node.Content is TextContent content ? content.Value : string.Empty,
-            Colour = Fade(NodeStyle.BodyText, reveal),
-            Position = new Vector2(position.X + textInset, position.Y + padding + headerSize + headerGap),
-            Size = new Vector2(textWidth, bodySize),
-            MaxWidth = textWidth,
-            LineSpacing = NodeStyle.LineSpacing,
-            Anchor = TextAnchor.Top
-        });
+            case TextContent text:
+                commands.Add(new TextRenderCommand
+                {
+                    Text = text.Value,
+                    Colour = Fade(NodeStyle.BodyText, reveal),
+                    Position = new Vector2(position.X + textInset, detailTop),
+                    Size = new Vector2(detailWidth, bodySize),
+                    MaxWidth = detailWidth,
+                    LineSpacing = NodeStyle.LineSpacing,
+                    Anchor = TextAnchor.Top,
+                    Clip = clip
+                });
+                break;
+
+            case ImageContent image:
+                commands.Add(new ImageRenderCommand
+                {
+                    FilePath = image.FilePath,
+                    Position = new Vector2(position.X + textInset, detailTop),
+                    Size = new Vector2(detailWidth, detailHeight),
+                    Opacity = reveal,
+                    Clip = clip
+                });
+                break;
+        }
     }
 
     // The reveal fades the whole card; alpha reaches Skia through Colour.A.

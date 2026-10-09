@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NodeVision.Core;
 
 namespace NodeVision.Visualisation;
 
@@ -13,7 +14,14 @@ public sealed class NodeExpansion : ISceneBehaviour
     private const float RevealDuration = 0.22f;
 
     private readonly HashSet<int> _expanded = new();
-    private readonly Dictionary<int, float> _reveal = new();
+
+    // Linear 0..1 progress of each node's reveal, advanced at a constant rate. What is presented is an
+    // eased version of it, so the card is already clearly visible on the first frames.
+    private readonly Dictionary<int, float> _progress = new();
+
+    // Whether each node should currently be shown (1) or hidden (0). Recomputed every frame, parents
+    // before children, and kept to avoid allocating.
+    private readonly Dictionary<int, float> _target = new();
 
     public bool IsExpanded(int nodeId) => _expanded.Contains(nodeId);
 
@@ -30,67 +38,69 @@ public sealed class NodeExpansion : ISceneBehaviour
     public void Build(SceneGraph graph)
     {
         _expanded.Clear();
-        _reveal.Clear();
+        _progress.Clear();
+        _target.Clear();
 
-        // Seed the values, so a freshly built scene presents the right thing on the first tick
-        // instead of animating everything in at once.
+        // Roots start shown and everything else starts hidden, so the first frame does not animate.
+        // Every key is created here so Update never has to add one.
         foreach (var node in graph.Nodes)
-            _reveal[node.Id] = TargetOf(graph, node.Id);
+        {
+            var shown = IsRoot(graph, node.Id) ? 1f : 0f;
+            _progress[node.Id] = shown;
+            _target[node.Id] = shown;
+        }
     }
 
     public void Update(float deltaTime, SceneGraph graph, PresentationState state)
     {
         var step = deltaTime / RevealDuration;
+        var nodes = graph.Nodes;
 
-        foreach (var node in graph.Nodes)
+        // Nodes are stored deepest first, so walking backwards visits every parent before its children
+        // and a child can read its parent's target and presented position from this same frame.
+        for (var i = nodes.Count - 1; i >= 0; i--)
         {
-            _reveal.TryGetValue(node.Id, out var current);
-            current = Approach(current, TargetOf(graph, node.Id), step);
-            _reveal[node.Id] = current;
-            state.For(node.Id).SetReveal(Ease(current));
-        }
+            var node = nodes[i];
+            var id = node.Id;
 
-        // Shallowest first (the reverse of draw order), so a child interpolates from the position its
-        // parent was given this frame instead of a stale one.
-        for (var i = graph.Nodes.Count - 1; i >= 0; i--)
-        {
-            var node = graph.Nodes[i];
-            if (!graph.TryGetParent(node.Id, out var parentId) || !graph.TryGetNode(parentId, out var parent))
-                continue; // no parent: the node keeps the position the scene authored
+            if (IsRoot(graph, id))
+                continue; // roots are always shown and stay where the scene put them
 
-            var origin = state.PositionOf(parent) + parent.Size * 0.5f;
-            var authored = graph.AuthoredPosition(node.Id);
-            state.For(node.Id).SetPosition(origin + (authored - origin) * Ease(_reveal[node.Id]));
+            graph.TryGetParent(id, out var parentId);
+
+            // A child is shown only while its parent is shown and expanded, so a collapsed ancestor
+            // hides the whole subtree while each descendant keeps its own expanded flag.
+            var shown = _target.TryGetValue(parentId, out var parentTarget) && parentTarget >= 1f && IsExpanded(parentId);
+            var target = shown ? 1f : 0f;
+            _target[id] = target;
+
+            var progress = _progress[id];
+            progress = target > progress
+                ? MathF.Min(target, progress + step)
+                : MathF.Max(target, progress - step);
+            _progress[id] = progress;
+
+            var eased = EaseOut(progress);
+            state.For(id).SetReveal(eased);
+
+            // The card grows out of its parent: it travels from where the parent is presented to
+            // where the scene authored it.
+            if (graph.TryGetNode(parentId, out var parent))
+            {
+                var from = state.PositionOf(parent);
+                var to = graph.AuthoredPosition(id);
+                state.For(id).SetPosition(from + (to - from) * eased);
+            }
         }
     }
 
-    /// <summary>
-    /// A node is revealed only while every node above it is expanded, so collapsing an ancestor hides
-    /// the whole branch below it rather than just its immediate children.
-    /// </summary>
-    private float TargetOf(SceneGraph graph, int nodeId)
+    // A root, or a node in an authoring cycle that SceneGraph treats as one.
+    private static bool IsRoot(SceneGraph graph, int nodeId) => !graph.TryGetParent(nodeId, out _) || graph.IsDetached(nodeId);
+
+    // Ends exactly at 0 and 1, so "fully revealed" (reveal >= 1) is only true once the animation is done.
+    private static float EaseOut(float t)
     {
-        if (graph.IsDetached(nodeId))
-            return 1f;
-
-        var current = nodeId;
-
-        for (var depth = 0; depth <= graph.Count; depth++)
-        {
-            if (!graph.TryGetParent(current, out var parentId))
-                return 1f; // reached the top of the chain
-
-            if (!_expanded.Contains(parentId))
-                return 0f;
-
-            current = parentId;
-        }
-
-        return 1f; // a cycle: keep it visible rather than hiding it forever
+        var inverse = 1f - t;
+        return 1f - inverse * inverse * inverse;
     }
-
-    private static float Approach(float current, float target, float step) =>
-        current < target ? MathF.Min(target, current + step) : MathF.Max(target, current - step);
-
-    private static float Ease(float t) => 1f - MathF.Pow(1f - t, 3f);
 }

@@ -12,6 +12,7 @@ public sealed class SceneGraph
     private readonly List<Node> _nodes = new();
     private readonly Dictionary<int, Node> _nodesById = new();
     private readonly Dictionary<int, int> _parentByChild = new();
+    private readonly HashSet<int> _withChildren = new();
     private readonly HashSet<int> _detached = new();
     private readonly Dictionary<int, Vector2> _authored = new();
 
@@ -48,6 +49,7 @@ public sealed class SceneGraph
                 continue; // first parent wins, and that parent is also the reveal origin
 
             graph._parentByChild[link.ChildNodeId] = link.ParentNodeId;
+            graph._withChildren.Add(link.ParentNodeId);
         }
 
         // A node whose parents never reach a root is part of an authoring cycle; treat it as a root so
@@ -67,6 +69,9 @@ public sealed class SceneGraph
     public bool TryGetNode(int nodeId, out Node node) => _nodesById.TryGetValue(nodeId, out node!);
 
     public bool TryGetParent(int nodeId, out int parentId) => _parentByChild.TryGetValue(nodeId, out parentId);
+
+    /// <summary>True when at least one node has this node as its parent, i.e. expanding it reveals something.</summary>
+    public bool HasChildren(int nodeId) => _withChildren.Contains(nodeId);
 
     /// <summary>True when the node sits in an authoring cycle and has no real root above it.</summary>
     public bool IsDetached(int nodeId) => _detached.Contains(nodeId);

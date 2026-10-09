@@ -64,8 +64,11 @@ public sealed class PresentationState
 
     public void Apply(SceneGraph graph)
     {
-        foreach (var node in graph.Nodes)
+        // Indexed, not foreach: Nodes is an IReadOnlyList, and enumerating it boxes an enumerator every frame.
+        var nodes = graph.Nodes;
+        for (var i = 0; i < nodes.Count; i++)
         {
+            var node = nodes[i];
             if (!_nodes.TryGetValue(node.Id, out var state))
                 continue; // untouched nodes keep whatever the scene gave them
 

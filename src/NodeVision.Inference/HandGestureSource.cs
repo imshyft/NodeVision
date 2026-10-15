@@ -28,6 +28,30 @@ public sealed class HandGestureSource : IGestureSource
 
     public event Action<GestureEvent>? GestureAvailable;
 
+    public int FrameWidth => _frameWidth;
+    public int FrameHeight => _frameHeight;
+
+    /// <summary>Last frame's smoothed landmarks, in original frame pixels. Empty when no hand.</summary>
+    public HandLandmark[] LastLandmarks => _gestureProcessor.LastSmoothedLandmarks;
+
+    /// <summary>Last frame's per-finger classification. Null when no hand.</summary>
+    public HandStateDiagnostics? Diagnostics => _gestureProcessor.LastDiagnostics;
+
+    /// <summary>Last frame's pinch reading.</summary>
+    public PinchEvent LastPinch => _gestureProcessor.LastPinch;
+
+    public bool IsPinching => _gestureProcessor.IsPinching;
+
+    /// <summary>Last palm detection (box plus keypoints), or null when nothing was detected.</summary>
+    public PalmDetection? LastPalm { get; private set; }
+
+    public float LastPresence { get; private set; }
+
+    public float LastHandedness { get; private set; }
+
+    /// <summary>Most recently emitted gesture, for debug overlays.</summary>
+    public GestureEvent? LastGesture { get; private set; }
+
     public void Start()
     {
         _inferenceEngine.InferenceCompleted += OnInferenceCompleted;
@@ -42,6 +66,9 @@ public sealed class HandGestureSource : IGestureSource
     {
         _frameWidth = result.FrameWidth;
         _frameHeight = result.FrameHeight;
+        LastPalm = result.Palm;
+        LastPresence = result.HandPresence;
+        LastHandedness = result.HandednessScore;
 
         if (result.HandLandmarks.Length > 8)
             _lastPointPosition = Normalize(new Vector2(result.HandLandmarks[8].X, result.HandLandmarks[8].Y));
@@ -52,9 +79,9 @@ public sealed class HandGestureSource : IGestureSource
                          _gestureProcessor.LastDiagnostics?.Confirmed == HandState.Pointing;
 
         if (isPointing)
-            GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, _lastPointPosition, 1f));
+            Emit(new GestureEvent(GestureKind.Point, GesturePhase.Updated, _lastPointPosition, 1f));
         else if (_wasPointing)
-            GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Ended, _lastPointPosition, 0f));
+            Emit(new GestureEvent(GestureKind.Point, GesturePhase.Ended, _lastPointPosition, 0f));
 
         _wasPointing = isPointing;
     }
@@ -62,13 +89,13 @@ public sealed class HandGestureSource : IGestureSource
     private void OnPinchChanged(PinchEvent pinch)
     {
         _lastPinchPosition = Normalize(pinch.Position);
-        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Updated, _lastPinchPosition, pinch.Strength));
+        Emit(new GestureEvent(GestureKind.Pinch, GesturePhase.Updated, _lastPinchPosition, pinch.Strength));
     }
 
     private void OnPinchTriggered(PinchEvent pinch)
     {
         var position = Normalize(pinch.Position);
-        GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Started, position, pinch.Strength));
+        Emit(new GestureEvent(GestureKind.Pinch, GesturePhase.Started, position, pinch.Strength));
     }
 
     private void OnHandStateChanged(HandStateChangedEvent change)
@@ -86,8 +113,14 @@ public sealed class HandGestureSource : IGestureSource
             var position = gestureKind is GestureKind.Point or GestureKind.OpenHand
                 ? _lastPointPosition
                 : _lastPinchPosition;
-            GestureAvailable?.Invoke(new GestureEvent(gestureKind, GesturePhase.Started, position, 1f));
+            Emit(new GestureEvent(gestureKind, GesturePhase.Started, position, 1f));
         }
+    }
+
+    private void Emit(GestureEvent gesture)
+    {
+        LastGesture = gesture;
+        GestureAvailable?.Invoke(gesture);
     }
 
     private Vector2 Normalize(Vector2 pixel) => new(pixel.X / _frameWidth, pixel.Y / _frameHeight);

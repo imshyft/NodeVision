@@ -7,6 +7,7 @@ using Avalonia.Controls.Selection;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using NodeVision.App.Controls;
 using NodeVision.App.Integration;
 using NodeVision.Core;
 using NodeVision.Inference;
@@ -39,6 +40,9 @@ public partial class MainWindow : Window
 
     private WebcamCaptureService? _webcamCaptureService;
     private DispatcherTimer? _renderTimer;
+
+    private bool _handDebugEnabled;
+    private readonly List<string> _handDebugLog = new();
 
     public MainWindow()
     {
@@ -77,6 +81,15 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
+        // F1 toggles the hand-tracking overlay; ignore auto-repeat like the gesture keys.
+        if (e.Key == Key.F1)
+        {
+            if (_heldKeys.Add(e.Key))
+                ToggleHandDebug();
+            e.Handled = true;
+            return;
+        }
+
         if (_keyboardSource is null)
             return;
 
@@ -141,7 +154,8 @@ public partial class MainWindow : Window
     private void UpdateDebugOverlay()
     {
         DebugGestureText.Text = (_keyboardSource?.BuildDebugText() ?? string.Empty)
-            + Environment.NewLine + _handStatus;
+            + Environment.NewLine + _handStatus
+            + Environment.NewLine + "F1: toggle hand debug";
     }
 
     private void LoadAvailableCameras()
@@ -166,8 +180,30 @@ public partial class MainWindow : Window
         object? sender,
         SelectionChangedEventArgs e)
     {
-        ConfirmCameraButton.IsEnabled =
-            CameraDeviceComboBox.SelectedItem is CameraDeviceOption;
+        var selectedCamera = CameraDeviceComboBox.SelectedItem as CameraDeviceOption;
+        ConfirmCameraButton.IsEnabled = selectedCamera is not null;
+
+        PopulateCameraModes(selectedCamera);
+    }
+
+    private void PopulateCameraModes(CameraDeviceOption? camera)
+    {
+        IReadOnlyList<CameraMode> modes =
+            camera?.Modes ?? Array.Empty<CameraMode>();
+
+        CameraModeComboBox.ItemsSource = modes;
+        CameraModeComboBox.SelectedItem = camera?.DefaultMode;
+
+        CameraSettingsButton.IsEnabled = modes.Count > 0;
+        if (modes.Count == 0)
+            CameraSettingsPanel.IsVisible = false;
+    }
+
+    private void OnCameraSettingsClick(
+        object? sender,
+        RoutedEventArgs e)
+    {
+        CameraSettingsPanel.IsVisible = !CameraSettingsPanel.IsVisible;
     }
 
     private async void OnConfirmCameraClick(
@@ -205,7 +241,8 @@ public partial class MainWindow : Window
             _visualizationEngine.LoadScene(loadedScene);
             SceneViewControl.Scene = loadedScene;
 
-            await StartSelectedCameraAsync(selectedCamera);
+            var selectedMode = CameraModeComboBox.SelectedItem as CameraMode;
+            await StartSelectedCameraAsync(selectedCamera, selectedMode);
 
             CameraPlaceholder.IsVisible = false;
             CameraSelectionOverlay.IsVisible = false;
@@ -218,21 +255,25 @@ public partial class MainWindow : Window
                 $"Unable to start camera: {ex.Message}";
 
             CameraDeviceComboBox.IsEnabled = true;
+            CameraSettingsButton.IsEnabled = selectedCamera.Modes.Count > 0;
             SelectSaveFileButton.IsEnabled = true;
             ConfirmCameraButton.IsEnabled = true;
         }
     }
 
-    private async Task StartSelectedCameraAsync(CameraDeviceOption selectedCamera)
+    private async Task StartSelectedCameraAsync(CameraDeviceOption selectedCamera, CameraMode? selectedMode)
     {
         _webcamCaptureService?.Dispose();
+
+        var mode = selectedMode ?? selectedCamera.DefaultMode;
 
         _webcamCaptureService = new WebcamCaptureService(
             new CaptureConfig(
                 DeviceIndex: selectedCamera.DeviceIndex,
-                Width: 1280,
-                Height: 720,
-                Fps: 30),
+                Width: mode?.Width ?? 1280,
+                Height: mode?.Height ?? 720,
+                Fps: mode?.Fps ?? 30,
+                PixelFormat: mode?.PixelFormat),
             _webcamFrameBuffer);
 
         _webcamCaptureService.Events.FrameCaptured += OnWebcamFrameCaptured;
@@ -279,6 +320,8 @@ public partial class MainWindow : Window
                 SceneViewControl.UpdateWebcamFrame();
             }
 
+            UpdateHandDebugOverlay();
+
             SceneViewControl.InvalidateVisual();
         };
 
@@ -294,12 +337,139 @@ public partial class MainWindow : Window
         _pendingGestures.Clear();
         _gestureEvents.Drain(_pendingGestures);
 
+        if (_handDebugEnabled)
+        {
+            foreach (var gesture in _pendingGestures)
+                _handDebugLog.Add($"{gesture.Kind} {gesture.Phase} mag={gesture.Magnitude:0.00} @ ({gesture.Position.X:0.00}, {gesture.Position.Y:0.00})");
+
+            while (_handDebugLog.Count > 8)
+                _handDebugLog.RemoveAt(0);
+        }
+
         _pendingSceneEvents.Clear();
         foreach (var gesture in _pendingGestures)
             _pendingSceneEvents.AddRange(_gestureToSceneMapper.Map(gesture));
 
         return _pendingSceneEvents;
     }
+
+    private void ToggleHandDebug()
+    {
+        _handDebugEnabled = !_handDebugEnabled;
+        HandDebugOverlay.IsVisible = _handDebugEnabled;
+
+        if (!_handDebugEnabled)
+        {
+            _handDebugLog.Clear();
+            SceneViewControl.DebugOverlayEnabled = false;
+            SceneViewControl.HandDebug = null;
+            SceneViewControl.InvalidateVisual();
+        }
+    }
+
+    private void UpdateHandDebugOverlay()
+    {
+        SceneViewControl.DebugOverlayEnabled = _handDebugEnabled;
+        if (!_handDebugEnabled)
+            return;
+
+        SceneViewControl.HandDebug = BuildHandDebugSnapshot();
+        HandDebugText.Text = BuildHandDebugText();
+    }
+
+    private HandDebugSnapshot? BuildHandDebugSnapshot()
+    {
+        if (_handSource is null)
+            return null;
+
+        var width = _handSource.FrameWidth;
+        var height = _handSource.FrameHeight;
+        if (width <= 0 || height <= 0)
+            return null;
+
+        var landmarks = _handSource.LastLandmarks;
+
+        var debugLandmarks = new List<DebugLandmark>(landmarks.Length);
+        foreach (var landmark in landmarks)
+            debugLandmarks.Add(new DebugLandmark(new Vector2(landmark.X / width, landmark.Y / height), landmark.Name));
+
+        var palmKeypoints = new List<Vector2>();
+        (Vector2 Min, Vector2 Max)? palmBox = null;
+        if (_handSource.LastPalm is { } palm)
+        {
+            foreach (var keypoint in palm.PalmLandmarks)
+                palmKeypoints.Add(new Vector2(keypoint.X / width, keypoint.Y / height));
+
+            palmBox = (
+                new Vector2(palm.Box.X1 / width, palm.Box.Y1 / height),
+                new Vector2(palm.Box.X2 / width, palm.Box.Y2 / height));
+        }
+
+        Vector2? pinchPosition = null;
+        Vector2? pointPosition = null;
+        if (landmarks.Length > 0)
+        {
+            pinchPosition = new Vector2(_handSource.LastPinch.Position.X / width, _handSource.LastPinch.Position.Y / height);
+
+            if (landmarks.Length > 8)
+                pointPosition = new Vector2(landmarks[8].X / width, landmarks[8].Y / height);
+        }
+
+        return new HandDebugSnapshot(
+            debugLandmarks,
+            palmKeypoints,
+            palmBox,
+            _handSource.IsPinching,
+            _handSource.LastPinch.Strength,
+            pinchPosition,
+            pointPosition);
+    }
+
+    private string BuildHandDebugText()
+    {
+        var text = new System.Text.StringBuilder();
+        text.AppendLine("Hand debug (F1)");
+
+        if (_handSource is null)
+        {
+            text.AppendLine("  no hand-tracking pipeline");
+        }
+        else
+        {
+            text.AppendLine($"  frame: {_handSource.FrameWidth}x{_handSource.FrameHeight}");
+            text.AppendLine($"  landmarks: {_handSource.LastLandmarks.Length}");
+            text.AppendLine($"  palm score: {_handSource.LastPalm?.Box.Score ?? 0f:0.00}");
+            text.AppendLine($"  presence: {_handSource.LastPresence:0.00}  handedness: {_handSource.LastHandedness:0.00}");
+
+            if (_handSource.Diagnostics is { } diagnostics)
+            {
+                text.AppendLine($"  confirmed: {diagnostics.Confirmed}  candidate: {diagnostics.Candidate}");
+                text.AppendLine($"  curled  idx:{Flag(diagnostics.IndexCurled)} mid:{Flag(diagnostics.MiddleCurled)} ring:{Flag(diagnostics.RingCurled)} pinky:{Flag(diagnostics.PinkyCurled)}");
+                text.AppendLine($"  index up: {Flag(diagnostics.IndexPointingUp)}");
+            }
+            else
+            {
+                text.AppendLine("  state: no hand");
+            }
+
+            var pinch = _handSource.LastPinch;
+            text.AppendLine($"  pinch: {pinch.Strength:0.00} ({(_handSource.IsPinching ? "held" : "open")})");
+
+            if (_handSource.LastGesture is { } gesture)
+                text.AppendLine($"  last gesture: {gesture.Kind} {gesture.Phase} mag={gesture.Magnitude:0.00}");
+        }
+
+        if (_handDebugLog.Count > 0)
+        {
+            text.AppendLine("  events:");
+            foreach (var entry in _handDebugLog)
+                text.AppendLine($"    {entry}");
+        }
+
+        return text.ToString();
+    }
+
+    private static string Flag(bool value) => value ? "Y" : "n";
 
     private void OnWebcamFrameCaptured(WebcamFrame frame)
     {
@@ -309,7 +479,10 @@ public partial class MainWindow : Window
 
     private void OnWebcamStarted()
     {
-        Console.WriteLine("[Webcam] Started");
+        var mode = _webcamCaptureService?.ActualMode;
+        Console.WriteLine(mode is null
+            ? "[Webcam] Started"
+            : $"[Webcam] Started at {mode}");
     }
 
     private void OnWebcamStopped()

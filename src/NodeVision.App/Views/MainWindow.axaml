@@ -55,9 +55,35 @@
                                TextWrapping="Wrap"
                                HorizontalAlignment="Center"/>
 
-                    <ComboBox x:Name="CameraDeviceComboBox"
-                              PlaceholderText="Select a camera..."
-                              SelectionChanged="OnCameraSelectionChanged"/>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+
+                        <ComboBox Grid.Column="0"
+                                  x:Name="CameraDeviceComboBox"
+                                  PlaceholderText="Select a camera..."
+                                  SelectionChanged="OnCameraSelectionChanged"/>
+
+                        <Button Grid.Column="1"
+                                x:Name="CameraSettingsButton"
+                                Content="⚙"
+                                FontSize="16"
+                                Padding="8,4"
+                                IsEnabled="False"
+                                ToolTip.Tip="Capture format"
+                                Click="OnCameraSettingsClick"/>
+
+                    </Grid>
+
+                    <StackPanel x:Name="CameraSettingsPanel"
+                                Spacing="8"
+                                IsVisible="False">
+
+                        <TextBlock Text="Capture format"
+                                   Foreground="LightGray"/>
+
+                        <ComboBox x:Name="CameraModeComboBox"
+                                  PlaceholderText="Default (highest fps)"/>
+
+                    </StackPanel>
 
                     <TextBlock x:Name="SaveFilePathText"
                                Text="Filepath: ..."
@@ -105,6 +131,23 @@
             <TextBlock x:Name="DebugGestureText"
                        Foreground="White"
                        FontSize="13"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- Hand-tracking debug overlay: landmarks, per-finger state and gesture history (F1) -->
+        <Border x:Name="HandDebugOverlay"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="12"
+                Padding="10,8"
+                CornerRadius="6"
+                MaxWidth="360"
+                Background="#CC000000"
+                IsVisible="False">
+            <TextBlock x:Name="HandDebugText"
+                       Foreground="White"
+                       FontSize="12"
+                       FontFamily="Consolas"
                        TextWrapping="Wrap"/>
         </Border>
 

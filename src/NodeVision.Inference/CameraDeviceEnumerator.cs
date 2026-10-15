@@ -25,18 +25,11 @@ public static class CameraDeviceEnumerator
     /// </summary>
     public static IReadOnlyList<CameraDeviceOption> Enumerate()
     {
-        var names = OperatingSystem.IsWindows() ? DirectShowNames() : Array.Empty<string>();
+        var devices = OperatingSystem.IsWindows()
+            ? DirectShowDevices()
+            : new List<CameraDeviceOption>();
 
-        if (names.Count > 0)
-        {
-            var devices = new List<CameraDeviceOption>(names.Count);
-            for (var index = 0; index < names.Count; index++)
-                devices.Add(new CameraDeviceOption(index, names[index]));
-
-            return devices;
-        }
-
-        return ProbeDevices();
+        return devices.Count > 0 ? devices : ProbeDevices();
     }
 
     private static IReadOnlyList<CameraDeviceOption> ProbeDevices()
@@ -47,16 +40,16 @@ public static class CameraDeviceEnumerator
         {
             using var capture = new VideoCapture(index, VideoCaptureAPIs.DSHOW);
             if (capture.IsOpened())
-                devices.Add(new CameraDeviceOption(index, $"Camera {index + 1}"));
+                devices.Add(new CameraDeviceOption(index, $"Camera {index + 1}", Array.Empty<CameraMode>()));
         }
 
         return devices;
     }
 
     [SupportedOSPlatform("windows")]
-    private static IReadOnlyList<string> DirectShowNames()
+    private static List<CameraDeviceOption> DirectShowDevices()
     {
-        var names = new List<string>();
+        var devices = new List<CameraDeviceOption>();
 
         ICreateDevEnum? deviceEnumerator = null;
         IEnumMoniker? monikers = null;
@@ -67,27 +60,20 @@ public static class CameraDeviceEnumerator
 
             var category = VideoInputDeviceCategory;
             if (deviceEnumerator.CreateClassEnumerator(ref category, out monikers, 0) != 0 || monikers is null)
-                return names;
+                return devices;
 
             var buffer = new IMoniker[1];
+            var index = 0;
             while (monikers.Next(1, buffer, IntPtr.Zero) == 0)
             {
                 var moniker = buffer[0];
                 try
                 {
-                    var bagId = typeof(IPropertyBag).GUID;
-                    moniker.BindToStorage(null!, null!, ref bagId, out var bagObject);
-
-                    var bag = (IPropertyBag)bagObject;
-                    try
+                    var name = ReadFriendlyName(moniker);
+                    if (!string.IsNullOrWhiteSpace(name))
                     {
-                        object value = string.Empty;
-                        if (bag.Read("FriendlyName", ref value, IntPtr.Zero) == 0 && value is string name && !string.IsNullOrWhiteSpace(name))
-                            names.Add(name);
-                    }
-                    finally
-                    {
-                        Marshal.ReleaseComObject(bag);
+                        var modes = DirectShowStreamCapabilities.Read(moniker);
+                        devices.Add(new CameraDeviceOption(index, name, modes));
                     }
                 }
                 catch (COMException)
@@ -97,6 +83,9 @@ public static class CameraDeviceEnumerator
                 finally
                 {
                     Marshal.ReleaseComObject(moniker);
+                    // The index follows DirectShow enumeration order, not the listed count, so a
+                    // skipped device does not shift the indices OpenCV opens by.
+                    index++;
                 }
             }
         }
@@ -112,7 +101,28 @@ public static class CameraDeviceEnumerator
                 Marshal.ReleaseComObject(deviceEnumerator);
         }
 
-        return names;
+        return devices;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static string? ReadFriendlyName(IMoniker moniker)
+    {
+        var bagId = typeof(IPropertyBag).GUID;
+        moniker.BindToStorage(null!, null!, ref bagId, out var bagObject);
+
+        var bag = (IPropertyBag)bagObject;
+        try
+        {
+            object value = string.Empty;
+            if (bag.Read("FriendlyName", ref value, IntPtr.Zero) == 0 && value is string name && !string.IsNullOrWhiteSpace(name))
+                return name;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(bag);
+        }
+
+        return null;
     }
 
     [ComImport]

@@ -16,7 +16,8 @@ public sealed record CaptureConfig(
     int DeviceIndex = 0,
     int Width = 1280,
     int Height = 720,
-    int Fps = 30,
+    double Fps = 30,
+    string? PixelFormat = null,
     VideoCaptureAPIs PreferredBackend = VideoCaptureAPIs.DSHOW);
 
 public sealed class WebcamCaptureEvents
@@ -52,6 +53,13 @@ public sealed class WebcamCaptureService : IDisposable
     public WebcamCaptureEvents Events => _events;
     public WebcamFrameRingBuffer RingBuffer => _ringBuffer;
     public bool IsRunning => _isRunning;
+
+    /// <summary>
+    /// The format the driver actually negotiated after the requested mode was applied, or null
+    /// until capture has started. OpenCV treats <c>Set</c> as a hint, so this can differ from the
+    /// requested mode.
+    /// </summary>
+    public CameraMode? ActualMode { get; private set; }
 
     public WebcamCaptureService(CaptureConfig config, WebcamFrameRingBuffer? ringBuffer = null)
     {
@@ -128,7 +136,12 @@ public sealed class WebcamCaptureService : IDisposable
         try
         {
             _capture = new VideoCapture(_config.DeviceIndex, _config.PreferredBackend);
-            
+
+            // The pixel format selects the media type (e.g. MJPG vs YUY2), so set it before the
+            // size and rate, which the driver matches within the chosen type.
+            if (!string.IsNullOrEmpty(_config.PixelFormat) && FourCc.TryPack(_config.PixelFormat, out var fourCc))
+                _capture.Set(VideoCaptureProperties.FourCC, fourCc);
+
             _capture.Set(VideoCaptureProperties.FrameWidth, _config.Width);
             _capture.Set(VideoCaptureProperties.FrameHeight, _config.Height);
             _capture.Set(VideoCaptureProperties.Fps, _config.Fps);
@@ -138,6 +151,8 @@ public sealed class WebcamCaptureService : IDisposable
                 throw new InvalidOperationException($"Failed to open webcam device {_config.DeviceIndex}");
             }
 
+            ActualMode = ReadActualMode();
+
             _isRunning = true;
             _events.OnStarted();
 
@@ -145,7 +160,8 @@ public sealed class WebcamCaptureService : IDisposable
             _bgraFrame = new Mat();
             
             var timestamp = 0L;
-            var frameInterval = TimeSpan.FromMilliseconds(1000.0 / _config.Fps);
+            var effectiveFps = ActualMode is { Fps: > 0 } actual ? actual.Fps : _config.Fps;
+            var frameInterval = TimeSpan.FromMilliseconds(1000.0 / effectiveFps);
             var nextFrameTime = DateTime.UtcNow;
 
             while (!_cts!.Token.IsCancellationRequested)
@@ -216,5 +232,21 @@ public sealed class WebcamCaptureService : IDisposable
     {
         StopAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
         _cts?.Dispose();
+    }
+
+    private CameraMode? ReadActualMode()
+    {
+        if (_capture is null)
+            return null;
+
+        var width = (int)_capture.Get(VideoCaptureProperties.FrameWidth);
+        var height = (int)_capture.Get(VideoCaptureProperties.FrameHeight);
+        var fps = _capture.Get(VideoCaptureProperties.Fps);
+        var fourCc = (int)_capture.Get(VideoCaptureProperties.FourCC);
+
+        if (width <= 0 || height <= 0)
+            return null;
+
+        return new CameraMode(width, height, Math.Round(fps, 2), FourCc.ToString(fourCc));
     }
 }

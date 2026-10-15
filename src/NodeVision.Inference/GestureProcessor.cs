@@ -110,6 +110,15 @@ public sealed class GestureProcessor
     /// <summary>Last frame's raw classification - see <see cref="HandStateDiagnostics"/>. Null when no hand was tracked.</summary>
     public HandStateDiagnostics? LastDiagnostics { get; private set; }
 
+    /// <summary>Last frame's smoothed landmarks - what the classifiers ran on. Empty when no hand was tracked.</summary>
+    public HandLandmark[] LastSmoothedLandmarks { get; private set; } = Array.Empty<HandLandmark>();
+
+    /// <summary>Last frame's pinch reading, for debug overlays.</summary>
+    public PinchEvent LastPinch { get; private set; }
+
+    /// <summary>Whether the pinch is currently within its on/off hysteresis band (debug/tuning aid).</summary>
+    public bool IsPinching => _isPinching;
+
     /// <summary>
     /// Feed one frame's raw (unsmoothed) hand landmarks in. Call once per
     /// InferenceEngine.InferenceCompleted, including with an empty array
@@ -122,10 +131,12 @@ public sealed class GestureProcessor
             ResetPinchState();
             ResetHandStateCandidate();
             LastDiagnostics = null;
+            LastSmoothedLandmarks = Array.Empty<HandLandmark>();
             return;
         }
 
         var landmarks = _smoother.Smooth(rawLandmarks);
+        LastSmoothedLandmarks = landmarks;
 
         var thumbTip = landmarks[4];
         var indexTip = landmarks[8];
@@ -155,6 +166,7 @@ public sealed class GestureProcessor
             : 0f;
         var position = new Vector2((thumbTip.X + indexTip.X) / 2f, (thumbTip.Y + indexTip.Y) / 2f);
         var pinch = new PinchEvent(position, strength);
+        LastPinch = pinch;
 
         PinchChanged?.Invoke(pinch);
         UpdateTriggerState(pinch);

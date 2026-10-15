@@ -106,14 +106,20 @@ public sealed class InferenceEngine : IDisposable
     private ValueTask<InferenceResult?> RunInferenceAsync(WebcamFrame frame, CancellationToken ct)
     {
         var handLandmarks = Array.Empty<HandLandmark>();
+        PalmDetection? palm = null;
+        var presence = 0f;
+        var handedness = 0f;
 
-        var palm = _palmDetector.Detect(frame);
-        if (palm is { } palmDetection)
+        var palmDetection = _palmDetector.Detect(frame);
+        if (palmDetection is { } detectedPalm)
         {
-            var hand = _handLandmarkDetector.Detect(frame, palmDetection);
+            palm = detectedPalm;
+            var hand = _handLandmarkDetector.Detect(frame, detectedPalm);
             if (hand is { } handResult)
             {
                 handLandmarks = handResult.Landmarks;
+                presence = handResult.Presence;
+                handedness = handResult.HandednessScore;
             }
         }
 
@@ -122,7 +128,10 @@ public sealed class InferenceEngine : IDisposable
             FrameWidth: frame.Width,
             FrameHeight: frame.Height,
             PoseLandmarks: Array.Empty<PoseLandmark>(),
-            HandLandmarks: handLandmarks);
+            HandLandmarks: handLandmarks,
+            Palm: palm,
+            HandPresence: presence,
+            HandednessScore: handedness);
 
         return ValueTask.FromResult<InferenceResult?>(result);
     }
@@ -143,7 +152,10 @@ public readonly record struct InferenceResult(
     int FrameWidth,
     int FrameHeight,
     PoseLandmark[] PoseLandmarks,
-    HandLandmark[] HandLandmarks);
+    HandLandmark[] HandLandmarks,
+    PalmDetection? Palm,
+    float HandPresence,
+    float HandednessScore);
 
 public readonly record struct PoseLandmark(
     float X,      // Normalized 0-1

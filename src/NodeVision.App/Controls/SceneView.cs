@@ -52,6 +52,12 @@ public class SceneView : Control, ICustomHitTest
     public Vector2 CameraTranslation { get; set; }
     public float CameraZoom { get; set; } = 1f;
 
+    /// <summary>When true and <see cref="HandDebug"/> is set, the hand-tracking overlay is drawn on top.</summary>
+    public bool DebugOverlayEnabled { get; set; }
+
+    /// <summary>Latest hand geometry to draw when <see cref="DebugOverlayEnabled"/> is on.</summary>
+    public HandDebugSnapshot? HandDebug { get; set; }
+
     public Vector2 ViewportSize => new Vector2((float)Bounds.Width, (float)Bounds.Height);
 
     // A control whose only content is custom draw operations is not hit tested unless it opts in,
@@ -156,6 +162,14 @@ public class SceneView : Control, ICustomHitTest
                     _renderer,
                     commands,
                     renderContext));
+        }
+
+        if (DebugOverlayEnabled && HandDebug is { } handDebug)
+        {
+            context.Custom(
+                new HandDebugDrawOperation(
+                    new Rect(0, 0, (float)Bounds.Width, (float)Bounds.Height),
+                    handDebug));
         }
     }
 
@@ -269,5 +283,181 @@ internal sealed class SceneDrawOperation : ICustomDrawOperation
             _renderer.Render(_commands, _renderContext);
             _renderer.EndRender();
         }
+    }
+}
+
+/// <summary>
+/// Draws the hand-tracking debug geometry: palm box and keypoints, the 21-landmark skeleton,
+/// numbered joints, the pinch marker (sized by strength) and the pointing crosshair. All points
+/// arrive normalised to the camera frame, which is what the background image is stretched to.
+/// </summary>
+internal sealed class HandDebugDrawOperation : ICustomDrawOperation
+{
+    // MediaPipe hand skeleton: wrist/palm, then each finger chain, then the palm close.
+    private static readonly (int A, int B)[] Connections =
+    {
+        (0, 1), (1, 2), (2, 3), (3, 4),
+        (0, 5), (5, 6), (6, 7), (7, 8),
+        (5, 9), (9, 10), (10, 11), (11, 12),
+        (9, 13), (13, 14), (14, 15), (15, 16),
+        (13, 17), (17, 18), (18, 19), (19, 20),
+        (0, 17),
+    };
+
+    private static readonly HashSet<int> Fingertips = new() { 4, 8, 12, 16, 20 };
+
+    private readonly Rect _bounds;
+    private readonly HandDebugSnapshot _hand;
+
+    public HandDebugDrawOperation(Rect bounds, HandDebugSnapshot hand)
+    {
+        _bounds = bounds;
+        _hand = hand;
+    }
+
+    public Rect Bounds => _bounds;
+
+    public bool HitTest(Point p) => false;
+
+    public bool Equals(ICustomDrawOperation? other) => ReferenceEquals(this, other);
+
+    public void Dispose()
+    {
+    }
+
+    public void Render(ImmediateDrawingContext context)
+    {
+        if (context.TryGetFeature(typeof(ISkiaSharpApiLeaseFeature))
+            is not ISkiaSharpApiLeaseFeature leaseFeature)
+            return;
+
+        using var lease = leaseFeature.Lease();
+        var canvas = lease.SkCanvas;
+
+        using (context.PushClip(_bounds))
+        {
+            DrawPalm(canvas);
+            DrawSkeleton(canvas);
+            DrawJoints(canvas);
+            DrawPinch(canvas);
+            DrawPoint(canvas);
+        }
+    }
+
+    private SKPoint Map(Vector2 normalized) => new(
+        (float)(_bounds.X + normalized.X * _bounds.Width),
+        (float)(_bounds.Y + normalized.Y * _bounds.Height));
+
+    private void DrawPalm(SKCanvas canvas)
+    {
+        using var boxPaint = new SKPaint
+        {
+            Color = new SKColor(255, 200, 0, 220),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 2f,
+        };
+        using var pointPaint = new SKPaint
+        {
+            Color = new SKColor(255, 0, 200, 220),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+        };
+
+        if (_hand.PalmBox is { } box)
+        {
+            var min = Map(box.Min);
+            var max = Map(box.Max);
+            canvas.DrawRect(new SKRect(min.X, min.Y, max.X, max.Y), boxPaint);
+        }
+
+        foreach (var keypoint in _hand.PalmKeypoints)
+            canvas.DrawCircle(Map(keypoint), 3.5f, pointPaint);
+    }
+
+    private void DrawSkeleton(SKCanvas canvas)
+    {
+        if (_hand.Landmarks.Count == 0)
+            return;
+
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(0, 220, 255, 220),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 3f,
+        };
+
+        foreach (var (a, b) in Connections)
+        {
+            if (a >= _hand.Landmarks.Count || b >= _hand.Landmarks.Count)
+                continue;
+
+            canvas.DrawLine(Map(_hand.Landmarks[a].Position), Map(_hand.Landmarks[b].Position), paint);
+        }
+    }
+
+    private void DrawJoints(SKCanvas canvas)
+    {
+        if (_hand.Landmarks.Count == 0)
+            return;
+
+        using var jointPaint = new SKPaint { Color = new SKColor(255, 255, 255, 230), IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var tipPaint = new SKPaint { Color = new SKColor(80, 255, 120, 255), IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var wristPaint = new SKPaint { Color = new SKColor(255, 160, 40, 255), IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var font = new SKFont { Size = 10f };
+        using var outline = new SKPaint { Color = new SKColor(0, 0, 0, 220), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2.5f };
+        using var textPaint = new SKPaint { Color = SKColors.White, IsAntialias = true, Style = SKPaintStyle.Fill };
+
+        for (var i = 0; i < _hand.Landmarks.Count; i++)
+        {
+            var point = Map(_hand.Landmarks[i].Position);
+            var isTip = Fingertips.Contains(i);
+
+            canvas.DrawCircle(point, i == 0 ? 6f : isTip ? 5f : 3.5f, i == 0 ? wristPaint : isTip ? tipPaint : jointPaint);
+
+            var label = i.ToString();
+            var x = point.X - font.MeasureText(label) / 2f;
+            var y = point.Y - 8f;
+            canvas.DrawText(label, x, y, SKTextAlign.Left, font, outline);
+            canvas.DrawText(label, x, y, SKTextAlign.Left, font, textPaint);
+        }
+    }
+
+    private void DrawPinch(SKCanvas canvas)
+    {
+        if (_hand.PinchPosition is not { } position)
+            return;
+
+        var point = Map(position);
+        var radius = 4f + _hand.PinchStrength * 16f;
+        var color = _hand.IsPinching ? new SKColor(255, 70, 70, 255) : new SKColor(255, 180, 60, 220);
+
+        using var fill = new SKPaint { Color = color.WithAlpha(90), IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var stroke = new SKPaint { Color = color, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2f };
+
+        canvas.DrawCircle(point, radius, fill);
+        canvas.DrawCircle(point, radius, stroke);
+    }
+
+    private void DrawPoint(SKCanvas canvas)
+    {
+        if (_hand.PointPosition is not { } position)
+            return;
+
+        var point = Map(position);
+        const float arm = 10f;
+
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(255, 255, 0, 220),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 2f,
+        };
+
+        canvas.DrawLine(point.X - arm, point.Y, point.X + arm, point.Y, paint);
+        canvas.DrawLine(point.X, point.Y - arm, point.X, point.Y + arm, paint);
+        canvas.DrawCircle(point, arm * 0.5f, paint);
     }
 }

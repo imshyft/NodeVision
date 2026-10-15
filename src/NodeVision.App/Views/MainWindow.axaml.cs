@@ -49,8 +49,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _gestureToSceneMapper = new GestureToSceneMapper(
-            () => SceneViewControl.ViewportSize,
-            screenPoint => _visualizationEngine.ScreenToCanvas(screenPoint, SceneViewControl.ViewportSize));
+            () => SceneViewControl.ViewportSize);
 
         SceneViewControl.SetWebcamSource(_webcamFrameBuffer);
 

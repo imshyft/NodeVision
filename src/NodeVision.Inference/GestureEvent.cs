@@ -15,6 +15,12 @@ public enum GestureKind
     Point,
     Fist,
     OpenHand,
+
+    /// <summary>
+    /// Hand-roll gesture. Emitted while a pinch is held; Magnitude carries the hand's roll angle in
+    /// radians, and a consumer derives a relative (change-based) control from it, e.g. zoom.
+    /// </summary>
+    Twist,
 }
 
 /// <summary>

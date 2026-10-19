@@ -16,4 +16,5 @@ public sealed record HandDebugSnapshot(
     bool IsPinching,
     float PinchStrength,
     Vector2? PinchPosition,
-    Vector2? PointPosition);
+    Vector2? PointPosition,
+    Vector2? PalmCenter);

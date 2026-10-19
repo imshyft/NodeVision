@@ -183,6 +183,30 @@ namespace NodeVision.Visualisation
         public bool IsExpanded(int nodeId) => Expansion.IsExpanded(nodeId);
 
         /// <summary>
+        /// True when the node exists and has children, i.e. expanding it would reveal something. Used
+        /// by the UI to show that a hovered node can be expanded.
+        /// </summary>
+        public bool CanExpand(int nodeId) => _graph.Contains(nodeId) && _graph.HasChildren(nodeId);
+
+        /// <summary>
+        /// The node's current on-screen rectangle in viewport pixels, or false when the node does not
+        /// exist. Uses the presented position, so it follows reveal animations.
+        /// </summary>
+        public bool TryGetNodeScreenBounds(int nodeId, Vector2 viewportSize, out Vector2 min, out Vector2 max)
+        {
+            if (!_graph.TryGetNode(nodeId, out var node))
+            {
+                min = Vector2.Zero;
+                max = Vector2.Zero;
+                return false;
+            }
+
+            min = CanvasToScreen(node.Position, viewportSize);
+            max = CanvasToScreen(node.Position + node.Size, viewportSize);
+            return true;
+        }
+
+        /// <summary>
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
         public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
@@ -19,6 +21,7 @@ namespace NodeVision.App.Views;
 public partial class MainWindow : Window
 {
     private string? _selectedSaveFilePath;
+    private IReadOnlyList<CameraDeviceOption> _availableCameras = Array.Empty<CameraDeviceOption>();
     private readonly VisualizationEngine _visualizationEngine = new();
     private readonly WebcamFrameRingBuffer _webcamFrameBuffer = new(4);
 
@@ -44,6 +47,10 @@ public partial class MainWindow : Window
     private bool _handDebugEnabled;
     private readonly List<string> _handDebugLog = new();
 
+    private const float PulseLifetimeSeconds = 0.55f;
+    private readonly List<ActivePulse> _interactionPulses = new();
+    private bool _pointerInside;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -57,9 +64,19 @@ public partial class MainWindow : Window
 
         SceneViewControl.Clicked += point =>
         {
-            var canvasPoint = _visualizationEngine.ScreenToCanvas(point, SceneViewControl.ViewportSize);
-            if (_visualizationEngine.HitTestNode(canvasPoint) is { } nodeId)
-                _visualizationEngine.ToggleExpanded(nodeId);
+            var viewport = SceneViewControl.ViewportSize;
+            var canvasPoint = _visualizationEngine.ScreenToCanvas(point, viewport);
+            if (_visualizationEngine.HitTestNode(canvasPoint) is not { } nodeId)
+                return;
+
+            if (!_visualizationEngine.CanExpand(nodeId))
+                return;
+
+            var wasExpanded = _visualizationEngine.IsExpanded(nodeId);
+            _visualizationEngine.ToggleExpanded(nodeId);
+
+            if (_visualizationEngine.TryGetNodeScreenBounds(nodeId, viewport, out var min, out var max))
+                AddPulseAt((min + max) * 0.5f, wasExpanded ? InteractionPulseKind.Collapse : InteractionPulseKind.Expand);
         };
         SceneViewControl.ZoomRequested += (delta, focalPoint) => _visualizationEngine.ZoomAt(delta, focalPoint, SceneViewControl.ViewportSize);
 
@@ -72,7 +89,10 @@ public partial class MainWindow : Window
         {
             var point = e.GetPosition(SceneViewControl);
             _pointerPosition = new Vector2((float)point.X, (float)point.Y);
+            _pointerInside = true;
         };
+
+        SceneViewControl.PointerExited += (_, _) => _pointerInside = false;
 
         KeyDown += OnWindowKeyDown;
         KeyUp += OnWindowKeyUp;
@@ -121,6 +141,8 @@ public partial class MainWindow : Window
         LoadAvailableCameras();
         StartRenderLoop();
         StartHandGesturePipeline();
+
+        RestoreLastSession();
     }
 
     /// <summary>
@@ -159,12 +181,10 @@ public partial class MainWindow : Window
 
     private void LoadAvailableCameras()
     {
-        IReadOnlyList<CameraDeviceOption> availableCameras =
-            CameraDeviceEnumerator.Enumerate();
+        _availableCameras = CameraDeviceEnumerator.Enumerate();
+        CameraDeviceComboBox.ItemsSource = _availableCameras;
 
-        CameraDeviceComboBox.ItemsSource = availableCameras;
-
-        if (availableCameras.Count == 0)
+        if (_availableCameras.Count == 0)
         {
             CameraStatusText.Text = "No cameras were detected.";
             ConfirmCameraButton.IsEnabled = false;
@@ -173,6 +193,77 @@ public partial class MainWindow : Window
         {
             CameraStatusText.Text = "Select a camera to continue.";
         }
+    }
+
+    /// <summary>
+    /// Pre-fills the last-used camera, capture mode and project path so the user only has to confirm.
+    /// Starting is always left to the OK button.
+    /// </summary>
+    private void RestoreLastSession()
+    {
+        var settings = AppSettingsStore.Load();
+        if (settings is null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(settings.ProjectPath) && File.Exists(settings.ProjectPath))
+        {
+            _selectedSaveFilePath = settings.ProjectPath;
+            SaveFilePathText.Text = $"Filepath: {_selectedSaveFilePath}";
+            SaveFileWarningText.IsVisible = false;
+        }
+
+        var camera = FindSavedCamera(settings);
+        if (camera is null)
+        {
+            if (_availableCameras.Count > 0)
+                CameraStatusText.Text = "Last camera not found. Select a camera to continue.";
+            return;
+        }
+
+        CameraDeviceComboBox.SelectedItem = camera;
+        PopulateCameraModes(camera);
+        ApplySavedMode(settings, camera);
+    }
+
+    private CameraDeviceOption? FindSavedCamera(AppSettings settings)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.CameraDisplayName))
+        {
+            var byName = _availableCameras.FirstOrDefault(
+                camera => string.Equals(camera.DisplayName, settings.CameraDisplayName, StringComparison.OrdinalIgnoreCase));
+            if (byName is not null)
+                return byName;
+        }
+
+        if (settings.CameraDeviceIndex is { } index)
+            return _availableCameras.FirstOrDefault(camera => camera.DeviceIndex == index);
+
+        return null;
+    }
+
+    private void ApplySavedMode(AppSettings settings, CameraDeviceOption camera)
+    {
+        if (settings.CameraMode is not { } saved)
+            return;
+
+        var mode = camera.Modes.FirstOrDefault(candidate =>
+            candidate.Width == saved.Width &&
+            candidate.Height == saved.Height &&
+            Math.Abs(candidate.Fps - saved.Fps) < 0.5 &&
+            string.Equals(candidate.PixelFormat, saved.PixelFormat, StringComparison.OrdinalIgnoreCase));
+
+        // A mode that no longer exists leaves the highest-fps default selected.
+        if (mode is not null)
+            CameraModeComboBox.SelectedItem = mode;
+    }
+
+    private void SaveCurrentSettings(CameraDeviceOption camera, CameraMode? mode)
+    {
+        AppSettingsStore.Save(new AppSettings(
+            camera.DisplayName,
+            camera.DeviceIndex,
+            mode,
+            _selectedSaveFilePath));
     }
 
     private void OnCameraSelectionChanged(
@@ -209,10 +300,15 @@ public partial class MainWindow : Window
         object? sender,
         RoutedEventArgs e)
     {
+        await TryStartFromSelectionAsync();
+    }
+
+    private async Task<bool> TryStartFromSelectionAsync()
+    {
         if (CameraDeviceComboBox.SelectedItem is not CameraDeviceOption selectedCamera)
         {
             CameraStatusText.Text = "Please select a camera.";
-            return;
+            return false;
         }
 
         if (string.IsNullOrWhiteSpace(_selectedSaveFilePath))
@@ -220,7 +316,7 @@ public partial class MainWindow : Window
             SaveFileWarningText.Text =
                 "Please select a save file before continuing.";
             SaveFileWarningText.IsVisible = true;
-            return;
+            return false;
         }
 
         SaveFileWarningText.IsVisible = false;
@@ -240,13 +336,15 @@ public partial class MainWindow : Window
             _visualizationEngine.LoadScene(loadedScene);
             SceneViewControl.Scene = loadedScene;
 
-            var selectedMode = CameraModeComboBox.SelectedItem as CameraMode;
+            var selectedMode = CameraModeComboBox.SelectedItem as CameraMode ?? selectedCamera.DefaultMode;
             await StartSelectedCameraAsync(selectedCamera, selectedMode);
 
             CameraPlaceholder.IsVisible = false;
             CameraSelectionOverlay.IsVisible = false;
             SceneViewControl.IsVisible = true;
-            
+
+            SaveCurrentSettings(selectedCamera, selectedMode);
+            return true;
         }
         catch (Exception ex)
         {
@@ -257,6 +355,7 @@ public partial class MainWindow : Window
             CameraSettingsButton.IsEnabled = selectedCamera.Modes.Count > 0;
             SelectSaveFileButton.IsEnabled = true;
             ConfirmCameraButton.IsEnabled = true;
+            return false;
         }
     }
 
@@ -308,6 +407,8 @@ public partial class MainWindow : Window
             // Clamped so a stall does not jump an animation straight to its end.
             _visualizationEngine.Update(Math.Min(deltaTime, 0.1f), DrainGestureEvents());
 
+            UpdateInteractionOverlay(Math.Min(deltaTime, 0.1f));
+
             SceneViewControl.CameraTranslation =
                 _visualizationEngine.CameraPosition;
 
@@ -345,11 +446,136 @@ public partial class MainWindow : Window
                 _handDebugLog.RemoveAt(0);
         }
 
+        foreach (var gesture in _pendingGestures)
+            AddGestureFeedback(gesture);
+
         _pendingSceneEvents.Clear();
         foreach (var gesture in _pendingGestures)
             _pendingSceneEvents.AddRange(_gestureToSceneMapper.Map(gesture));
 
         return _pendingSceneEvents;
+    }
+
+    /// <summary>
+    /// Turns a started gesture into a transient on-screen pulse, so the presenter gets feedback even
+    /// without the debug overlay. Expand/collapse pulses are placed on the node they act on.
+    /// </summary>
+    private void AddGestureFeedback(GestureEvent gesture)
+    {
+        if (gesture.Phase != GesturePhase.Started)
+            return;
+
+        switch (gesture.Kind)
+        {
+            case GestureKind.OpenHand:
+                if (TryGetExpandableNode(gesture.Position, out var expandId, out var expandCentre) &&
+                    !_visualizationEngine.IsExpanded(expandId))
+                    AddPulseAt(expandCentre, InteractionPulseKind.Expand);
+                break;
+
+            case GestureKind.Fist:
+                if (TryGetExpandableNode(gesture.Position, out var collapseId, out var collapseCentre) &&
+                    _visualizationEngine.IsExpanded(collapseId))
+                    AddPulseAt(collapseCentre, InteractionPulseKind.Collapse);
+                break;
+
+            case GestureKind.Point:
+            case GestureKind.Pinch:
+            case GestureKind.Twist:
+                AddPulse(gesture.Position, InteractionPulseKind.Gesture);
+                break;
+        }
+    }
+
+    private bool TryGetExpandableNode(Vector2 normalizedPosition, out int nodeId, out Vector2 screenCentre)
+    {
+        var viewport = SceneViewControl.ViewportSize;
+        var screen = new Vector2(normalizedPosition.X * viewport.X, normalizedPosition.Y * viewport.Y);
+        var canvas = _visualizationEngine.ScreenToCanvas(screen, viewport);
+
+        nodeId = -1;
+        screenCentre = screen;
+
+        if (_visualizationEngine.HitTestNode(canvas) is not { } id || !_visualizationEngine.CanExpand(id))
+            return false;
+
+        nodeId = id;
+        if (_visualizationEngine.TryGetNodeScreenBounds(id, viewport, out var min, out var max))
+            screenCentre = (min + max) * 0.5f;
+
+        return true;
+    }
+
+    private void AddPulse(Vector2 normalizedPosition, InteractionPulseKind kind)
+    {
+        var viewport = SceneViewControl.ViewportSize;
+        AddPulseAt(new Vector2(normalizedPosition.X * viewport.X, normalizedPosition.Y * viewport.Y), kind);
+    }
+
+    private void AddPulseAt(Vector2 screenPosition, InteractionPulseKind kind)
+    {
+        _interactionPulses.Add(new ActivePulse { ScreenPosition = screenPosition, Kind = kind, Age = 0f });
+    }
+
+    private void UpdateInteractionOverlay(float deltaTime)
+    {
+        for (var i = _interactionPulses.Count - 1; i >= 0; i--)
+        {
+            var pulse = _interactionPulses[i];
+            pulse.Age += deltaTime;
+            if (pulse.Age >= PulseLifetimeSeconds)
+                _interactionPulses.RemoveAt(i);
+        }
+
+        var viewport = SceneViewControl.ViewportSize;
+
+        Vector2? handCursor = null;
+        var pointer = PointerGesture.None;
+
+        if (_handSource is not null &&
+            _handSource.FrameWidth > 0 && _handSource.FrameHeight > 0 &&
+            _handSource.LastLandmarks.Length >= 21)
+        {
+            if (_handSource.IsPinching)
+                pointer = PointerGesture.Pinching;
+            else if (_handSource.Diagnostics?.Confirmed == HandState.Pointing)
+                pointer = PointerGesture.Pointing;
+
+            if (pointer != PointerGesture.None)
+            {
+                var palm = _handSource.LastPalmPosition;
+                handCursor = new Vector2(
+                    palm.X / _handSource.FrameWidth * viewport.X,
+                    palm.Y / _handSource.FrameHeight * viewport.Y);
+            }
+        }
+
+        (Vector2 Min, Vector2 Max)? hoverBounds = null;
+        var hoverExpanded = false;
+
+        if (viewport.X > 0f && viewport.Y > 0f && (handCursor is not null || _pointerInside))
+        {
+            var cursor = handCursor ?? _pointerPosition;
+            var canvas = _visualizationEngine.ScreenToCanvas(cursor, viewport);
+
+            if (_visualizationEngine.HitTestNode(canvas) is { } nodeId && _visualizationEngine.CanExpand(nodeId))
+            {
+                hoverExpanded = _visualizationEngine.IsExpanded(nodeId);
+                if (_visualizationEngine.TryGetNodeScreenBounds(nodeId, viewport, out var min, out var max))
+                    hoverBounds = (min, max);
+            }
+        }
+
+        var pulses = new List<InteractionPulse>(_interactionPulses.Count);
+        foreach (var pulse in _interactionPulses)
+            pulses.Add(new InteractionPulse(
+                pulse.ScreenPosition,
+                Math.Clamp(pulse.Age / PulseLifetimeSeconds, 0f, 1f),
+                pulse.Kind));
+
+        SceneViewControl.Interaction = handCursor is not null || hoverBounds is not null || pulses.Count > 0
+            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses)
+            : null;
     }
 
     private void ToggleHandDebug()
@@ -406,12 +632,16 @@ public partial class MainWindow : Window
 
         Vector2? pinchPosition = null;
         Vector2? pointPosition = null;
+        Vector2? palmCenter = null;
         if (landmarks.Length > 0)
         {
             pinchPosition = new Vector2(_handSource.LastPinch.Position.X / width, _handSource.LastPinch.Position.Y / height);
 
             if (landmarks.Length > 8)
                 pointPosition = new Vector2(landmarks[8].X / width, landmarks[8].Y / height);
+
+            if (landmarks.Length >= 21)
+                palmCenter = new Vector2(_handSource.LastPalmPosition.X / width, _handSource.LastPalmPosition.Y / height);
         }
 
         return new HandDebugSnapshot(
@@ -421,7 +651,8 @@ public partial class MainWindow : Window
             _handSource.IsPinching,
             _handSource.LastPinch.Strength,
             pinchPosition,
-            pointPosition);
+            pointPosition,
+            palmCenter);
     }
 
     private string BuildHandDebugText()
@@ -437,14 +668,16 @@ public partial class MainWindow : Window
         {
             text.AppendLine($"  frame: {_handSource.FrameWidth}x{_handSource.FrameHeight}");
             text.AppendLine($"  landmarks: {_handSource.LastLandmarks.Length}");
+            text.AppendLine($"  palm: ({_handSource.LastPalmPosition.X:0}, {_handSource.LastPalmPosition.Y:0})");
             text.AppendLine($"  palm score: {_handSource.LastPalm?.Box.Score ?? 0f:0.00}");
             text.AppendLine($"  presence: {_handSource.LastPresence:0.00}  handedness: {_handSource.LastHandedness:0.00}");
 
             if (_handSource.Diagnostics is { } diagnostics)
             {
                 text.AppendLine($"  confirmed: {diagnostics.Confirmed}  candidate: {diagnostics.Candidate}");
-                text.AppendLine($"  curled  idx:{Flag(diagnostics.IndexCurled)} mid:{Flag(diagnostics.MiddleCurled)} ring:{Flag(diagnostics.RingCurled)} pinky:{Flag(diagnostics.PinkyCurled)}");
-                text.AppendLine($"  index up: {Flag(diagnostics.IndexPointingUp)}");
+                text.AppendLine($"  index: curled:{Flag(diagnostics.IndexCurled)} extended:{Flag(diagnostics.IndexExtended)} straight:{diagnostics.IndexStraightness:0.00} up:{Flag(diagnostics.IndexPointingUp)}");
+                text.AppendLine($"  curled  mid:{Flag(diagnostics.MiddleCurled)} ring:{Flag(diagnostics.RingCurled)} pinky:{Flag(diagnostics.PinkyCurled)}");
+                text.AppendLine($"  folded  mid:{Flag(diagnostics.MiddleFolded)} {diagnostics.MiddlePalmRatio:0.00}  ring:{Flag(diagnostics.RingFolded)} {diagnostics.RingPalmRatio:0.00}  pinky:{Flag(diagnostics.PinkyFolded)} {diagnostics.PinkyPalmRatio:0.00}");
             }
             else
             {
@@ -453,6 +686,7 @@ public partial class MainWindow : Window
 
             var pinch = _handSource.LastPinch;
             text.AppendLine($"  pinch: {pinch.Strength:0.00} ({(_handSource.IsPinching ? "held" : "open")})");
+            text.AppendLine($"  roll: {_handSource.LastHandRoll * (180f / MathF.PI):0} deg");
 
             if (_handSource.LastGesture is { } gesture)
                 text.AppendLine($"  last gesture: {gesture.Kind} {gesture.Phase} mag={gesture.Magnitude:0.00}");
@@ -547,5 +781,12 @@ public partial class MainWindow : Window
         _selectedSaveFilePath = localPath;
         SaveFilePathText.Text = $"Filepath: {_selectedSaveFilePath}";
         SaveFileWarningText.IsVisible = false;
+    }
+
+    private sealed class ActivePulse
+    {
+        public Vector2 ScreenPosition;
+        public InteractionPulseKind Kind;
+        public float Age;
     }
 }

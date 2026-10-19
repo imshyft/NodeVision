@@ -58,6 +58,9 @@ public class SceneView : Control, ICustomHitTest
     /// <summary>Latest hand geometry to draw when <see cref="DebugOverlayEnabled"/> is on.</summary>
     public HandDebugSnapshot? HandDebug { get; set; }
 
+    /// <summary>Always-on interaction feedback (cursor, hover target, expand/collapse pulses).</summary>
+    public InteractionOverlay? Interaction { get; set; }
+
     public Vector2 ViewportSize => new Vector2((float)Bounds.Width, (float)Bounds.Height);
 
     // A control whose only content is custom draw operations is not hit tested unless it opts in,
@@ -162,6 +165,14 @@ public class SceneView : Control, ICustomHitTest
                     _renderer,
                     commands,
                     renderContext));
+        }
+
+        if (Interaction is { } interaction)
+        {
+            context.Custom(
+                new InteractionDrawOperation(
+                    new Rect(0, 0, (float)Bounds.Width, (float)Bounds.Height),
+                    interaction));
         }
 
         if (DebugOverlayEnabled && HandDebug is { } handDebug)
@@ -341,6 +352,7 @@ internal sealed class HandDebugDrawOperation : ICustomDrawOperation
             DrawJoints(canvas);
             DrawPinch(canvas);
             DrawPoint(canvas);
+            DrawPalmCentre(canvas);
         }
     }
 
@@ -459,5 +471,172 @@ internal sealed class HandDebugDrawOperation : ICustomDrawOperation
         canvas.DrawLine(point.X - arm, point.Y, point.X + arm, point.Y, paint);
         canvas.DrawLine(point.X, point.Y - arm, point.X, point.Y + arm, paint);
         canvas.DrawCircle(point, arm * 0.5f, paint);
+    }
+
+    private void DrawPalmCentre(SKCanvas canvas)
+    {
+        if (_hand.PalmCenter is not { } position)
+            return;
+
+        var point = Map(position);
+
+        using var fill = new SKPaint { Color = new SKColor(0, 120, 255, 200), IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var ring = new SKPaint { Color = new SKColor(150, 210, 255, 255), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2f };
+
+        canvas.DrawCircle(point, 4f, fill);
+        canvas.DrawCircle(point, 9f, ring);
+    }
+}
+
+/// <summary>
+/// Draws the always-on interaction feedback in screen space: the hand cursor ring, a highlight around
+/// the expandable node under the cursor, and transient rings for gesture / expand / collapse events.
+/// </summary>
+internal sealed class InteractionDrawOperation : ICustomDrawOperation
+{
+    private static readonly SKColor CursorPointing = new(120, 220, 255);
+    private static readonly SKColor CursorPinching = new(255, 130, 90);
+    private static readonly SKColor ExpandColour = new(90, 230, 130);
+    private static readonly SKColor CollapseColour = new(255, 160, 70);
+    private static readonly SKColor HoverExpandable = new(110, 205, 255);
+    private static readonly SKColor HoverExpanded = new(110, 225, 150);
+
+    private readonly Rect _bounds;
+    private readonly InteractionOverlay _overlay;
+
+    public InteractionDrawOperation(Rect bounds, InteractionOverlay overlay)
+    {
+        _bounds = bounds;
+        _overlay = overlay;
+    }
+
+    public Rect Bounds => _bounds;
+
+    public bool HitTest(Point p) => false;
+
+    public bool Equals(ICustomDrawOperation? other) => ReferenceEquals(this, other);
+
+    public void Dispose()
+    {
+    }
+
+    public void Render(ImmediateDrawingContext context)
+    {
+        if (context.TryGetFeature(typeof(ISkiaSharpApiLeaseFeature))
+            is not ISkiaSharpApiLeaseFeature leaseFeature)
+            return;
+
+        using var lease = leaseFeature.Lease();
+        var canvas = lease.SkCanvas;
+
+        using (context.PushClip(_bounds))
+        {
+            DrawHover(canvas);
+            DrawPulses(canvas);
+            DrawCursor(canvas);
+        }
+    }
+
+    private void DrawHover(SKCanvas canvas)
+    {
+        if (_overlay.HoverBounds is not { } bounds)
+            return;
+
+        var colour = _overlay.HoverExpanded ? HoverExpanded : HoverExpandable;
+        var rect = new SKRect(
+            (float)bounds.Min.X - 7f,
+            (float)bounds.Min.Y - 7f,
+            (float)bounds.Max.X + 7f,
+            (float)bounds.Max.Y + 7f);
+
+        using var glow = new SKPaint
+        {
+            Color = colour.WithAlpha(65),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 10f,
+        };
+        using var outline = new SKPaint
+        {
+            Color = colour.WithAlpha(235),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 2.5f,
+        };
+
+        canvas.DrawRoundRect(rect, 16f, 16f, glow);
+        canvas.DrawRoundRect(rect, 16f, 16f, outline);
+
+        // Badge in the top-right: "+" when collapsed (can expand), "-" when expanded.
+        var centreX = rect.Right - 4f;
+        var centreY = rect.Top + 4f;
+
+        using var badge = new SKPaint { Color = colour, IsAntialias = true, Style = SKPaintStyle.Fill };
+        using var mark = new SKPaint { Color = new SKColor(10, 20, 30), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2.5f };
+
+        canvas.DrawCircle(centreX, centreY, 11f, badge);
+        canvas.DrawLine(centreX - 5f, centreY, centreX + 5f, centreY, mark);
+        if (!_overlay.HoverExpanded)
+            canvas.DrawLine(centreX, centreY - 5f, centreX, centreY + 5f, mark);
+    }
+
+    private void DrawPulses(SKCanvas canvas)
+    {
+        for (var i = 0; i < _overlay.Pulses.Count; i++)
+        {
+            var pulse = _overlay.Pulses[i];
+            var progress = Math.Clamp(pulse.Progress, 0f, 1f);
+            var radius = 14f + progress * 50f;
+            var alpha = (byte)((1f - progress) * 210f);
+
+            var colour = pulse.Kind switch
+            {
+                InteractionPulseKind.Expand => ExpandColour,
+                InteractionPulseKind.Collapse => CollapseColour,
+                _ => CursorPointing,
+            };
+
+            using var paint = new SKPaint
+            {
+                Color = colour.WithAlpha(alpha),
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 3f,
+            };
+
+            canvas.DrawCircle(pulse.ScreenCentre.X, pulse.ScreenCentre.Y, radius, paint);
+        }
+    }
+
+    private void DrawCursor(SKCanvas canvas)
+    {
+        if (_overlay.HandCursor is not { } cursor || _overlay.Pointer == PointerGesture.None)
+            return;
+
+        var pinching = _overlay.Pointer == PointerGesture.Pinching;
+        var colour = pinching ? CursorPinching : CursorPointing;
+        var radius = pinching ? 8f : 15f;
+
+        using var ring = new SKPaint
+        {
+            Color = colour.WithAlpha(230),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = pinching ? 3f : 2.5f,
+        };
+        using var dot = new SKPaint { Color = colour.WithAlpha(230), IsAntialias = true, Style = SKPaintStyle.Fill };
+
+        canvas.DrawCircle(cursor.X, cursor.Y, radius, ring);
+        canvas.DrawCircle(cursor.X, cursor.Y, pinching ? 3.5f : 2f, dot);
+
+        if (pinching)
+        {
+            // A short cross marks the contact point.
+            using var cross = new SKPaint { Color = colour.WithAlpha(200), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2f };
+            canvas.DrawLine(cursor.X - 12f, cursor.Y, cursor.X - 6f, cursor.Y, cross);
+            canvas.DrawLine(cursor.X + 6f, cursor.Y, cursor.X + 12f, cursor.Y, cross);
+            canvas.DrawLine(cursor.X, cursor.Y - 12f, cursor.X, cursor.Y - 6f, cross);
+            canvas.DrawLine(cursor.X, cursor.Y + 6f, cursor.X, cursor.Y + 12f, cross);
+        }
     }
 }

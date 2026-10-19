@@ -13,11 +13,12 @@ namespace NodeVision.App.Integration;
 /// </summary>
 public sealed class KeyboardGestureSource : IGestureSource
 {
-    private const float ZoomStep = 0.25f;
-
     // How far a single pan tap moves, and how much a held pan advances each frame.
     private const float PanPressStep = 0.15f;
     private const float PanHoldStep = 0.02f;
+
+    // Radians of simulated hand roll per zoom key press.
+    private const float TwistStep = 0.4f;
 
     private readonly record struct Binding(string Key, GestureKind Kind, float Amount, string Label);
 
@@ -26,11 +27,13 @@ public sealed class KeyboardGestureSource : IGestureSource
         new("1", GestureKind.Point, 0f, "Pan"),
         new("2", GestureKind.Fist, 0f, "Collapse"),
         new("3", GestureKind.OpenHand, 0f, "Expand"),
-        new("4", GestureKind.Pinch, ZoomStep, "Zoom in"),
-        new("5", GestureKind.Pinch, -ZoomStep, "Zoom out"),
+        new("4", GestureKind.Twist, TwistStep, "Zoom in"),
+        new("5", GestureKind.Twist, -TwistStep, "Zoom out"),
     };
 
     private string? _last;
+
+    private float _roll;
 
     private bool _panHeld;
     private Vector2 _panPointer;
@@ -108,11 +111,12 @@ public sealed class KeyboardGestureSource : IGestureSource
                 GestureAvailable?.Invoke(new GestureEvent(GestureKind.Point, GesturePhase.Updated, _panPoint, 1f));
                 break;
 
-            case GestureKind.Pinch:
-                // Run a small signed strength step so the mapper reads a zoom delta.
-                var previous = binding.Amount > 0f ? 0f : -binding.Amount;
-                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Started, position, previous));
-                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Pinch, GesturePhase.Updated, position, previous + binding.Amount));
+            case GestureKind.Twist:
+                // Simulate a hand roll; the mapper turns the angle change into a zoom factor.
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Twist, GesturePhase.Started, position, _roll));
+                _roll += binding.Amount;
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Twist, GesturePhase.Updated, position, _roll));
+                GestureAvailable?.Invoke(new GestureEvent(GestureKind.Twist, GesturePhase.Ended, position, _roll));
                 break;
 
             default:

@@ -37,10 +37,18 @@ public readonly record struct HandStateChangedEvent(HandState PreviousState, Han
 /// </summary>
 public readonly record struct HandStateDiagnostics(
     bool IndexCurled,
+    bool IndexExtended,
+    float IndexStraightness,
     bool MiddleCurled,
     bool RingCurled,
     bool PinkyCurled,
     bool IndexPointingUp,
+    bool MiddleFolded,
+    bool RingFolded,
+    bool PinkyFolded,
+    float MiddlePalmRatio,
+    float RingPalmRatio,
+    float PinkyPalmRatio,
     HandState Candidate,
     HandState Confirmed);
 
@@ -77,6 +85,12 @@ public sealed class GestureProcessor
     private const float ClosedDistanceRatio = 0.15f;
     private const float OpenDistanceRatio = 0.6f;
 
+    // A pinch needs the index finger reaching out toward the thumb. In a closed fist the thumb and
+    // index tips also sit close together, which would otherwise read as a pinch and start zooming,
+    // so require the index to be at least this straight (direct MCP->tip over segment length).
+    // Starting guess - tune against a real hand.
+    private const float PinchMinIndexStraightness = 0.5f;
+
     // How long a candidate Open/Closed/Pointing reading must hold before
     // it's confirmed and reported. Short - this is noise rejection, not a
     // deliberate "hold to trigger" like pinch.
@@ -86,6 +100,20 @@ public sealed class GestureProcessor
     // MCP->tip vector is allowed to be and still count as "pointing
     // upward". Starting guess - tune against a real hand.
     private const float PointingUpToleranceDegrees = 40f;
+
+    // Pointing requires the three non-index fingers to be curled up into the
+    // palm, not merely bent. Distance from the fingertip to the palm centre,
+    // as a fraction of the hand size (wrist -> middle MCP); a fully tucked
+    // finger sits well under this. Lower values are stricter. Starting guess
+    // - tune against a real hand.
+    private const float CurledIntoPalmRatio = 0.4f;
+
+    // Pointing requires the index finger to be almost fully extended. Measured as the ratio of the
+    // direct MCP->tip distance to the sum of the three finger segments: a straight finger is ~1.0
+    // regardless of the direction it points, so this still holds when the finger points at the
+    // camera and its on-screen length foreshortens. A merely uncurled-but-bent finger sits well
+    // below. Starting guess - tune against a real hand.
+    private const float ExtendedMinStraightnessRatio = 0.9f;
 
     private readonly LandmarkSmoother _smoother = new(smoothingFactor: 0.4f);
 
@@ -102,8 +130,8 @@ public sealed class GestureProcessor
     public event Action<HandStateChangedEvent>? HandStateChanged;
 
     /// <summary>
-    /// Index-fingertip position in original frame pixels, emitted every tracked frame. Used as the
-    /// cursor for pointing/panning, independent of the pinch reading.
+    /// Palm-centre position in original frame pixels, emitted every tracked frame. Used as the
+    /// cursor for pointing/panning because it stays far steadier than any fingertip.
     /// </summary>
     public event Action<Vector2>? HandPositionChanged;
 
@@ -112,6 +140,15 @@ public sealed class GestureProcessor
 
     /// <summary>Last frame's smoothed landmarks - what the classifiers ran on. Empty when no hand was tracked.</summary>
     public HandLandmark[] LastSmoothedLandmarks { get; private set; } = Array.Empty<HandLandmark>();
+
+    /// <summary>Last frame's palm centre (mean of the wrist and the four MCP joints), in frame pixels.</summary>
+    public Vector2 LastPalmPosition { get; private set; }
+
+    /// <summary>
+    /// Last frame's hand roll in radians: the screen angle of the knuckle line (index MCP -> pinky
+    /// MCP). Rotating the hand about the camera axis changes it, which is what drives twist-to-zoom.
+    /// </summary>
+    public float LastHandRoll { get; private set; }
 
     /// <summary>Last frame's pinch reading, for debug overlays.</summary>
     public PinchEvent LastPinch { get; private set; }
@@ -161,7 +198,12 @@ public sealed class GestureProcessor
             IsFingerCurled(wrist, landmarks[14], landmarks[16]) &&
             IsFingerCurled(wrist, landmarks[18], landmarks[20]);
 
-        var strength = otherFingersCurled
+        // The index also has to be reaching toward the thumb rather than tucked into the palm, or a
+        // closed fist (where thumb and index tips are close) would register as a pinch.
+        var indexStraightness = FingerStraightness(landmarks[5], landmarks[6], landmarks[7], landmarks[8]);
+        var indexReaching = indexStraightness >= PinchMinIndexStraightness;
+
+        var strength = otherFingersCurled && indexReaching
             ? 1f - InverseLerpClamped(ClosedDistanceRatio, OpenDistanceRatio, normalizedDistance)
             : 0f;
         var position = new Vector2((thumbTip.X + indexTip.X) / 2f, (thumbTip.Y + indexTip.Y) / 2f);
@@ -171,12 +213,33 @@ public sealed class GestureProcessor
         PinchChanged?.Invoke(pinch);
         UpdateTriggerState(pinch);
 
-        HandPositionChanged?.Invoke(new Vector2(indexTip.X, indexTip.Y));
+        LastPalmPosition = PalmCentre(landmarks);
+        LastHandRoll = HandRoll(landmarks);
+        HandPositionChanged?.Invoke(LastPalmPosition);
 
         var candidate = ClassifyHandState(landmarks, wrist, out var diagnosticsSoFar);
         UpdateHandState(candidate);
         LastDiagnostics = diagnosticsSoFar with { Candidate = candidate, Confirmed = _confirmedState };
     }
+
+    /// <summary>
+    /// Mean of the wrist and the four MCP joints - a stable anchor that does not swing with the
+    /// finger poses the way a fingertip does, so it makes a far calmer pan cursor.
+    /// </summary>
+    private static Vector2 PalmCentre(HandLandmark[] landmarks)
+    {
+        var x = landmarks[0].X + landmarks[5].X + landmarks[9].X + landmarks[13].X + landmarks[17].X;
+        var y = landmarks[0].Y + landmarks[5].Y + landmarks[9].Y + landmarks[13].Y + landmarks[17].Y;
+        return new Vector2(x / 5f, y / 5f);
+    }
+
+    /// <summary>
+    /// Roll of the hand about the camera axis, from the angle of the knuckle line (index MCP ->
+    /// pinky MCP) in the frame. Uses two stable knuckle landmarks, so it is unaffected by how the
+    /// fingers are curled.
+    /// </summary>
+    private static float HandRoll(HandLandmark[] landmarks)
+        => MathF.Atan2(landmarks[17].Y - landmarks[5].Y, landmarks[17].X - landmarks[5].X);
 
     /// <summary>
     /// A finger is "curled" when its tip has folded back closer to the
@@ -186,6 +249,35 @@ public sealed class GestureProcessor
     /// </summary>
     private static bool IsFingerCurled(HandLandmark wrist, HandLandmark pip, HandLandmark tip)
         => Distance(tip, wrist) < Distance(pip, wrist);
+
+    /// <summary>
+    /// How far a fingertip sits from the palm centre, as a fraction of hand size. Low values mean the
+    /// finger is tucked into the palm; used to require a real curl for the pointing gesture.
+    /// </summary>
+    private static float PalmRatio(HandLandmark tip, Vector2 palmCentre, float handSize)
+    {
+        if (handSize < 1e-3f)
+            return float.MaxValue;
+
+        var dx = tip.X - palmCentre.X;
+        var dy = tip.Y - palmCentre.Y;
+        return MathF.Sqrt(dx * dx + dy * dy) / handSize;
+    }
+
+    /// <summary>
+    /// Straightness of a finger in [0, 1]: the direct MCP->tip distance over the sum of the three
+    /// segment lengths. 1 is perfectly straight; a folded finger is much lower. Unlike a joint angle
+    /// this reads the same whether the finger points up, sideways or straight at the camera, because
+    /// foreshortening shrinks the direct distance and every segment together.
+    /// </summary>
+    private static float FingerStraightness(HandLandmark mcp, HandLandmark pip, HandLandmark dip, HandLandmark tip)
+    {
+        var path = Distance(mcp, pip) + Distance(pip, dip) + Distance(dip, tip);
+        if (path < 1e-6f)
+            return 0f;
+
+        return Distance(mcp, tip) / path;
+    }
 
     /// <summary>
     /// True when the vector from a finger's MCP to its tip points close
@@ -215,8 +307,25 @@ public sealed class GestureProcessor
         var pinkyCurled = IsFingerCurled(wrist, landmarks[18], landmarks[20]);
         var indexPointingUp = IsPointingUp(landmarks[5], landmarks[8]);
 
+        // Pointing needs the index almost straight (direction-independent) and the three non-index
+        // fingers fully curled into the palm, both stricter than the loose curl test used for
+        // Open/Closed.
+        var indexStraightness = FingerStraightness(landmarks[5], landmarks[6], landmarks[7], landmarks[8]);
+        var indexExtended = indexStraightness >= ExtendedMinStraightnessRatio;
+
+        var palmCentre = PalmCentre(landmarks);
+        var handSize = Distance(wrist, landmarks[9]);
+        var middlePalm = PalmRatio(landmarks[12], palmCentre, handSize);
+        var ringPalm = PalmRatio(landmarks[16], palmCentre, handSize);
+        var pinkyPalm = PalmRatio(landmarks[20], palmCentre, handSize);
+
+        var middleFolded = middlePalm < CurledIntoPalmRatio;
+        var ringFolded = ringPalm < CurledIntoPalmRatio;
+        var pinkyFolded = pinkyPalm < CurledIntoPalmRatio;
+
         diagnosticsSoFar = new HandStateDiagnostics(
-            indexCurled, middleCurled, ringCurled, pinkyCurled, indexPointingUp,
+            indexCurled, indexExtended, indexStraightness, middleCurled, ringCurled, pinkyCurled, indexPointingUp,
+            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm,
             Candidate: HandState.Unknown, Confirmed: HandState.Unknown);
 
         if (indexCurled && middleCurled && ringCurled && pinkyCurled)
@@ -225,7 +334,7 @@ public sealed class GestureProcessor
         if (!indexCurled && !middleCurled && !ringCurled && !pinkyCurled)
             return HandState.Open;
 
-        if (!indexCurled && middleCurled && ringCurled && pinkyCurled && indexPointingUp)
+        if (indexExtended && middleFolded && ringFolded && pinkyFolded)
             return HandState.Pointing;
 
         return HandState.Unknown;

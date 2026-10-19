@@ -16,6 +16,7 @@ public sealed class HandGestureSource : IGestureSource
     private Vector2 _lastPinchPosition = new(0.5f, 0.5f);
     private Vector2 _lastPointPosition = new(0.5f, 0.5f);
     private bool _wasPointing;
+    private bool _wasPinching;
 
     public HandGestureSource(InferenceEngine inferenceEngine)
     {
@@ -34,6 +35,9 @@ public sealed class HandGestureSource : IGestureSource
     /// <summary>Last frame's smoothed landmarks, in original frame pixels. Empty when no hand.</summary>
     public HandLandmark[] LastLandmarks => _gestureProcessor.LastSmoothedLandmarks;
 
+    /// <summary>Last frame's palm-centre position in frame pixels - the anchor the pan is driven from.</summary>
+    public Vector2 LastPalmPosition => _gestureProcessor.LastPalmPosition;
+
     /// <summary>Last frame's per-finger classification. Null when no hand.</summary>
     public HandStateDiagnostics? Diagnostics => _gestureProcessor.LastDiagnostics;
 
@@ -41,6 +45,9 @@ public sealed class HandGestureSource : IGestureSource
     public PinchEvent LastPinch => _gestureProcessor.LastPinch;
 
     public bool IsPinching => _gestureProcessor.IsPinching;
+
+    /// <summary>Last frame's hand roll in radians (the twist-to-zoom control).</summary>
+    public float LastHandRoll => _gestureProcessor.LastHandRoll;
 
     /// <summary>Last palm detection (box plus keypoints), or null when nothing was detected.</summary>
     public PalmDetection? LastPalm { get; private set; }
@@ -70,10 +77,12 @@ public sealed class HandGestureSource : IGestureSource
         LastPresence = result.HandPresence;
         LastHandedness = result.HandednessScore;
 
-        if (result.HandLandmarks.Length > 8)
-            _lastPointPosition = Normalize(new Vector2(result.HandLandmarks[8].X, result.HandLandmarks[8].Y));
-
         _gestureProcessor.Update(result.HandLandmarks);
+
+        // Panning follows the palm centre rather than the index tip, so the scene stays steady while
+        // the pointing finger wobbles. Set after Update so it reflects this frame's smoothed pose.
+        if (_gestureProcessor.LastSmoothedLandmarks.Length >= 21)
+            _lastPointPosition = Normalize(_gestureProcessor.LastPalmPosition);
 
         var isPointing = result.HandLandmarks.Length > 8 &&
                          _gestureProcessor.LastDiagnostics?.Confirmed == HandState.Pointing;
@@ -84,6 +93,19 @@ public sealed class HandGestureSource : IGestureSource
             Emit(new GestureEvent(GestureKind.Point, GesturePhase.Ended, _lastPointPosition, 0f));
 
         _wasPointing = isPointing;
+
+        // A held pinch is the "grab" that arms zoom; the hand's roll then drives it relative.
+        var isPinching = _gestureProcessor.IsPinching;
+        if (isPinching)
+            Emit(new GestureEvent(
+                GestureKind.Twist,
+                _wasPinching ? GesturePhase.Updated : GesturePhase.Started,
+                _lastPinchPosition,
+                _gestureProcessor.LastHandRoll));
+        else if (_wasPinching)
+            Emit(new GestureEvent(GestureKind.Twist, GesturePhase.Ended, _lastPinchPosition, _gestureProcessor.LastHandRoll));
+
+        _wasPinching = isPinching;
     }
 
     private void OnPinchChanged(PinchEvent pinch)

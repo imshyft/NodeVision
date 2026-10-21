@@ -6,11 +6,7 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public class NodeDrawCommandBuilder : DrawCommandBuilder
 {
-    // Below this camera zoom, cards collapse to their title so the overview reads as structure
-    // rather than a wall of body text. Detail returns as the presenter zooms in.
-    private const float SemanticZoomDetailThreshold = 0.6f;
-
-    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands, RenderContext context)
+    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands)
     {
         var node = (Node)sceneObject;
         var reveal = Math.Clamp(node.Reveal, 0f, 1f);
@@ -71,9 +67,6 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
             Anchor = TextAnchor.Top,
             Clip = clip
         });
-
-        if (context.CameraZoom < SemanticZoomDetailThreshold)
-            return;
 
         var detailTop = position.Y + padding + headerSize + headerGap;
         var detailWidth = size.X - textInset - padding;

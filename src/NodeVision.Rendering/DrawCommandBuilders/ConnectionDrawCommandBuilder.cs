@@ -13,7 +13,7 @@ public class ConnectionDrawCommandBuilder : DrawCommandBuilder
     private const float MaxBow = 70f;
     private const float BowFraction = 0.18f;
 
-    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands, RenderContext context)
+    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands)
     {
         var connection = (Connection)sceneObject;
 

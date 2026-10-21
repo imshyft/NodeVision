@@ -5,7 +5,7 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public class RectangleDrawCommandBuilder : DrawCommandBuilder
 {
-    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands, RenderContext context)
+    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands)
     {
         var rectangleObject = (RectangleObject)sceneObject;
         commands.Add(new RectangleRenderCommand()

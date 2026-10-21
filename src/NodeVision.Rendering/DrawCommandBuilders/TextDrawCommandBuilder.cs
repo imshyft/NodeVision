@@ -5,7 +5,7 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public class TextDrawCommandBuilder : DrawCommandBuilder
 {
-    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands, RenderContext context)
+    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands)
     {
         var textObject = (TextObject)sceneObject;
         commands.Add(new TextRenderCommand()

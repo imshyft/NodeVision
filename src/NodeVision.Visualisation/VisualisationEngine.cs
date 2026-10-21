@@ -433,7 +433,7 @@ namespace NodeVision.Visualisation
                 width / MathF.Max(1f, contentSize.X),
                 height / MathF.Max(1f, contentSize.Y));
 
-            return Math.Clamp(zoom, 0.2f, 1.6f);
+            return Math.Clamp(zoom, 0.2f, 1.3f);
         }
 
         /// <summary>

@@ -51,6 +51,7 @@ public readonly record struct HandStateDiagnostics(
     float PinkyPalmRatio,
     float MiddleThumbRatio,
     float PalmWidthRatio,
+    float PinchReachRatio,
     HandState Candidate,
     HandState Confirmed);
 
@@ -98,6 +99,11 @@ public sealed class GestureProcessor
     // hand edge-on foreshortens it. Requiring that foreshortening stops a straight-on pinch during an
     // expand/collapse from briefly starting a zoom. Starting guess - tune against a real hand.
     private const float PinchMaxPalmWidthRatio = 0.6f;
+
+    // Zoom also requires the thumb/index contact point to be reaching away from the palm, not tucked
+    // against it. Distance from that contact point to the palm centre, relative to hand size. A
+    // pinch held close to the hand must not zoom. Starting guess - tune against a real hand.
+    private const float PinchMinReachRatio = 0.75f;
 
     // How long a candidate Open/Closed/Pointing reading must hold before
     // it's confirmed and reported. Short - this is noise rejection, not a
@@ -230,17 +236,23 @@ public sealed class GestureProcessor
         var palmWidthRatio = Distance(landmarks[5], landmarks[17]) / handSize;
         var palmTurnedAway = palmWidthRatio <= PinchMaxPalmWidthRatio;
 
-        var strength = otherFingersCurled && indexReaching && palmTurnedAway
+        var palmCentre = PalmCentre(landmarks);
+        var position = new Vector2((thumbTip.X + indexTip.X) / 2f, (thumbTip.Y + indexTip.Y) / 2f);
+
+        // The contact point must be held out away from the palm, not tucked against the hand.
+        var pinchReachRatio = Distance(position, palmCentre) / handSize;
+        var pinchReachingOut = pinchReachRatio >= PinchMinReachRatio;
+
+        var strength = otherFingersCurled && indexReaching && palmTurnedAway && pinchReachingOut
             ? 1f - InverseLerpClamped(ClosedDistanceRatio, OpenDistanceRatio, normalizedDistance)
             : 0f;
-        var position = new Vector2((thumbTip.X + indexTip.X) / 2f, (thumbTip.Y + indexTip.Y) / 2f);
         var pinch = new PinchEvent(position, strength);
         LastPinch = pinch;
 
         PinchChanged?.Invoke(pinch);
         UpdateTriggerState(pinch);
 
-        LastPalmPosition = PalmCentre(landmarks);
+        LastPalmPosition = palmCentre;
         LastHandRoll = HandRoll(landmarks);
         HandPositionChanged?.Invoke(LastPalmPosition);
 
@@ -362,10 +374,14 @@ public sealed class GestureProcessor
 
         var middleThumbRatio = Distance(landmarks[4], landmarks[12]) / handSize;
         var palmWidthRatio = Distance(landmarks[5], landmarks[17]) / handSize;
+        var pinchPosition = new Vector2(
+            (landmarks[4].X + landmarks[8].X) / 2f,
+            (landmarks[4].Y + landmarks[8].Y) / 2f);
+        var pinchReachRatio = Distance(pinchPosition, palmCentre) / handSize;
 
         diagnosticsSoFar = new HandStateDiagnostics(
             indexCurled, indexExtended, indexStraightness, middleCurled, ringCurled, pinkyCurled, indexPointingUp,
-            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm, middleThumbRatio, palmWidthRatio,
+            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm, middleThumbRatio, palmWidthRatio, pinchReachRatio,
             Candidate: HandState.Unknown, Confirmed: HandState.Unknown);
 
         if (indexCurled && middleCurled && ringCurled && pinkyCurled)
@@ -441,6 +457,13 @@ public sealed class GestureProcessor
     }
 
     private static float Distance(HandLandmark a, HandLandmark b)
+    {
+        var dx = a.X - b.X;
+        var dy = a.Y - b.Y;
+        return MathF.Sqrt(dx * dx + dy * dy);
+    }
+
+    private static float Distance(Vector2 a, Vector2 b)
     {
         var dx = a.X - b.X;
         var dy = a.Y - b.Y;

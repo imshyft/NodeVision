@@ -865,7 +865,7 @@ public partial class MainWindow : Window
                 text.AppendLine($"  index: curled:{Flag(diagnostics.IndexCurled)} extended:{Flag(diagnostics.IndexExtended)} straight:{diagnostics.IndexStraightness:0.00} up:{Flag(diagnostics.IndexPointingUp)}");
                 text.AppendLine($"  curled  mid:{Flag(diagnostics.MiddleCurled)} ring:{Flag(diagnostics.RingCurled)} pinky:{Flag(diagnostics.PinkyCurled)}");
                 text.AppendLine($"  folded  mid:{Flag(diagnostics.MiddleFolded)} {diagnostics.MiddlePalmRatio:0.00}  ring:{Flag(diagnostics.RingFolded)} {diagnostics.RingPalmRatio:0.00}  pinky:{Flag(diagnostics.PinkyFolded)} {diagnostics.PinkyPalmRatio:0.00}");
-                text.AppendLine($"  middle-thumb: {diagnostics.MiddleThumbRatio:0.00}  palm-width: {diagnostics.PalmWidthRatio:0.00}  pan: {Flag(_handSource.IsPanActive)}");
+                text.AppendLine($"  middle-thumb:{diagnostics.MiddleThumbRatio:0.00}  palm-width:{diagnostics.PalmWidthRatio:0.00}  pinch-reach:{diagnostics.PinchReachRatio:0.00}  pan:{Flag(_handSource.IsPanActive)}");
             }
             else
             {

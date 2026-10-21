@@ -11,10 +11,11 @@ public class RenderBuilder
         { typeof(RectangleObject), new RectangleDrawCommandBuilder() },
         { typeof(TextObject), new TextDrawCommandBuilder() },
         { typeof(ImageObject), new ImageDrawCommandBuilder() },
+        { typeof(Connection), new ConnectionDrawCommandBuilder() },
         { typeof(Node), new NodeDrawCommandBuilder() }
     };
 
-    public List<RenderCommand> BuildScene(Scene scene)
+    public List<RenderCommand> BuildScene(Scene scene, RenderContext context)
     {
         var commands = new List<RenderCommand>();
 
@@ -22,7 +23,7 @@ public class RenderBuilder
         {
             if (_builders.TryGetValue(sceneObject.GetType(), out var builder))
             {
-                builder.BuildCommand(sceneObject, commands);
+                builder.BuildCommand(sceneObject, commands, context);
             }
         }
 

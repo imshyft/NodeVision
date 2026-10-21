@@ -13,7 +13,8 @@ public class SkiaRenderer : Renderer
     {
         { typeof(RectangleRenderCommand), new RectangleRenderer() },
         { typeof(TextRenderCommand), new TextRenderer() },
-        { typeof(ImageRenderCommand), new ImageRenderer() }
+        { typeof(ImageRenderCommand), new ImageRenderer() },
+        { typeof(ConnectionRenderCommand), new ConnectionRenderer() }
     };
 
     public void BeginRender(SKCanvas canvas)

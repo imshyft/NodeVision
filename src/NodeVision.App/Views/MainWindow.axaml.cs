@@ -115,6 +115,29 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Key is Key.Home or Key.F)
+        {
+            if (!_heldKeys.Add(e.Key))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.Home)
+            {
+                _visualizationEngine.ShowOverview();
+            }
+            else
+            {
+                var canvas = _visualizationEngine.ScreenToCanvas(_pointerPosition, SceneViewControl.ViewportSize);
+                if (_visualizationEngine.HitTestNode(canvas) is { } nodeId)
+                    _visualizationEngine.FocusOnNode(nodeId);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (_keyboardSource is null)
             return;
 
@@ -182,7 +205,7 @@ public partial class MainWindow : Window
     {
         DebugGestureText.Text = (_keyboardSource?.BuildDebugText() ?? string.Empty)
             + Environment.NewLine + _handStatus
-            + Environment.NewLine + "F1: toggle hand debug";
+            + Environment.NewLine + "F1: toggle hand debug  |  Home: overview  |  F: focus hovered";
     }
 
     private void LoadAvailableCameras()

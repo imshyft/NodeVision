@@ -150,14 +150,14 @@ public class SceneView : Control, ICustomHitTest
 
         if (Scene != null)
         {
-            var commands = _renderBuilder.BuildScene(Scene);
-
             var renderContext = new RenderContext
             {
                 CameraTranslation = CameraTranslation,
                 CameraZoom = CameraZoom,
                 RenderTargetSize = new Vector2((float)Bounds.Width, (float)Bounds.Height)
             };
+
+            var commands = _renderBuilder.BuildScene(Scene, renderContext);
 
             context.Custom(
                 new SceneDrawOperation(

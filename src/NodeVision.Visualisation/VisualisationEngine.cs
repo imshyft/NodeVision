@@ -12,6 +12,10 @@ namespace NodeVision.Visualisation
         private SceneGraph _graph;
         private float _time;
 
+        private Vector2 _cameraTargetPosition;
+        private float _cameraTargetZoom = 1f;
+        private bool _cameraAnimating;
+
         public Scene Scene { get; private set; }
         
 
@@ -70,6 +74,7 @@ namespace NodeVision.Visualisation
         {
             _time += deltaTime;
 
+            UpdateCameraAnimation(deltaTime);
             Refresh(deltaTime);
             SyncLayout();
         }
@@ -234,6 +239,8 @@ namespace NodeVision.Visualisation
         /// <param name="screenDelta">Displacement vector in screen pixels.</param>
         public void Pan(Vector2 screenDelta)
         {
+            _cameraAnimating = false;
+
             if (CameraZoom <= 0f)
                 return;
 
@@ -246,6 +253,7 @@ namespace NodeVision.Visualisation
         /// <param name="canvasDelta">Displacement vector in canvas units.</param>
         public void PanCanvas(Vector2 canvasDelta)
         {
+            _cameraAnimating = false;
             CameraPosition -= canvasDelta;
         }
 
@@ -285,6 +293,8 @@ namespace NodeVision.Visualisation
         /// <param name="maxZoom">Maximum allowed zoom level.</param>
         public void ZoomAt(float zoomDelta, Vector2 focalScreenPoint, Vector2 viewportSize, float minZoom = 0.1f, float maxZoom = 10f)
         {
+            _cameraAnimating = false;
+
             float oldZoom = CameraZoom;
             float newZoom = MathF.Max(minZoom, MathF.Min(maxZoom, oldZoom + zoomDelta));
             if (MathF.Abs(newZoom - oldZoom) < 0.0001f)
@@ -304,6 +314,8 @@ namespace NodeVision.Visualisation
         /// </summary>
         public void ZoomBy(float factor, Vector2 focalScreenPoint, Vector2 viewportSize, float minZoom = 0.1f, float maxZoom = 10f)
         {
+            _cameraAnimating = false;
+
             if (!float.IsFinite(factor) || factor <= 0f)
                 return;
 
@@ -320,12 +332,100 @@ namespace NodeVision.Visualisation
         }
 
         /// <summary>
-        /// Centers the camera on a specific coordinate in the canvas.
+        /// Animates the camera to centre on a specific coordinate in the canvas.
         /// </summary>
         /// <param name="canvasPosition">Target canvas position.</param>
         public void FocusOn(Vector2 canvasPosition)
         {
-            CameraPosition = canvasPosition;
+            StartCameraAnimation(canvasPosition, CameraZoom);
+        }
+
+        /// <summary>
+        /// Animates the camera to frame a node and zoom to a comfortable detail level.
+        /// </summary>
+        public bool FocusOnNode(int nodeId)
+        {
+            if (!_graph.TryGetNode(nodeId, out var node))
+                return false;
+
+            var centre = node.Position + node.Size * 0.5f;
+            StartCameraAnimation(centre, FitZoomFor(node.Size));
+            return true;
+        }
+
+        /// <summary>
+        /// Animates the camera to frame everything currently visible, i.e. the presentation overview.
+        /// </summary>
+        public void ShowOverview()
+        {
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            var max = new Vector2(float.MinValue, float.MinValue);
+            var found = false;
+
+            foreach (var node in _graph.Nodes)
+            {
+                if (node.Reveal <= 0.01f)
+                    continue;
+
+                found = true;
+                min = new Vector2(MathF.Min(min.X, node.Position.X), MathF.Min(min.Y, node.Position.Y));
+
+                var bottomRight = node.Position + node.Size;
+                max = new Vector2(MathF.Max(max.X, bottomRight.X), MathF.Max(max.Y, bottomRight.Y));
+            }
+
+            if (!found)
+            {
+                StartCameraAnimation(Vector2.Zero, 1f);
+                return;
+            }
+
+            StartCameraAnimation((min + max) * 0.5f, FitZoomFor(max - min));
+        }
+
+        private void StartCameraAnimation(Vector2 targetPosition, float targetZoom)
+        {
+            _cameraTargetPosition = targetPosition;
+            _cameraTargetZoom = Math.Clamp(targetZoom, 0.1f, 10f);
+            _cameraAnimating = true;
+        }
+
+        /// <summary>
+        /// Eases the camera toward the last focus/overview target. A direct pan or zoom cancels it, so
+        /// manual input always wins over an in-flight move.
+        /// </summary>
+        private void UpdateCameraAnimation(float deltaTime)
+        {
+            if (!_cameraAnimating)
+                return;
+
+            var t = 1f - MathF.Exp(-10f * deltaTime);
+            CameraPosition = CameraPosition + (_cameraTargetPosition - CameraPosition) * t;
+            CameraZoom = CameraZoom + (_cameraTargetZoom - CameraZoom) * t;
+
+            if ((CameraPosition - _cameraTargetPosition).LengthSquared < 0.25f &&
+                MathF.Abs(CameraZoom - _cameraTargetZoom) < 0.001f)
+            {
+                CameraPosition = _cameraTargetPosition;
+                CameraZoom = _cameraTargetZoom;
+                _cameraAnimating = false;
+            }
+        }
+
+        private float FitZoomFor(Vector2 contentSize)
+        {
+            if (ViewportSize.X <= 0f || ViewportSize.Y <= 0f)
+                return CameraZoom;
+
+            const float margin = 100f;
+            var width = MathF.Max(1f, ViewportSize.X - margin * 2f);
+            var height = MathF.Max(1f, ViewportSize.Y - margin * 2f);
+
+            var zoom = MathF.Min(
+                width / MathF.Max(1f, contentSize.X),
+                height / MathF.Max(1f, contentSize.Y));
+
+            return Math.Clamp(zoom, 0.2f, 1.6f);
         }
 
         /// <summary>
@@ -333,6 +433,7 @@ namespace NodeVision.Visualisation
         /// </summary>
         public void ResetCamera()
         {
+            _cameraAnimating = false;
             CameraPosition = Vector2.Zero;
             CameraZoom = 1f;
         }

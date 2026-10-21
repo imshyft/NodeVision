@@ -43,8 +43,16 @@ public sealed class SceneGraph
         {
             if (sceneObject is not Connection link)
                 continue;
-            if (!graph._nodesById.ContainsKey(link.ParentNodeId) || !graph._nodesById.ContainsKey(link.ChildNodeId))
+
+            if (!graph._nodesById.TryGetValue(link.ParentNodeId, out var parent) ||
+                !graph._nodesById.TryGetValue(link.ChildNodeId, out var child))
                 continue;
+
+            // The renderer draws connections straight from these references, so resolve them here for
+            // every scene (the loader already does, but the test scene does not).
+            link.ParentNode = parent;
+            link.ChildNode = child;
+
             if (graph._parentByChild.ContainsKey(link.ChildNodeId))
                 continue; // first parent wins, and that parent is also the reveal origin
 

@@ -718,6 +718,7 @@ public partial class MainWindow : Window
 
         var handOutline = new List<Vector2>();
         var handOccluded = false;
+        IReadOnlyList<(Vector2 Min, Vector2 Max)> occluders = Array.Empty<(Vector2 Min, Vector2 Max)>();
         Vector2? handCursor = null;
         var pointer = PointerGesture.None;
 
@@ -732,7 +733,8 @@ public partial class MainWindow : Window
                     landmark.Y / _handSource.FrameHeight));
             }
 
-            handOccluded = IsHandOccluded(handOutline);
+            occluders = _visualizationEngine.VisibleNodeScreenBounds(viewport);
+            handOccluded = IsHandOccluded(handOutline, occluders);
 
             if (_handSource.IsPinching)
                 pointer = PointerGesture.Pinching;
@@ -772,17 +774,19 @@ public partial class MainWindow : Window
                 pulse.Kind));
 
         SceneViewControl.Interaction = handCursor is not null || hoverBounds is not null || pulses.Count > 0 || handOccluded
-            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses, handOutline, handOccluded)
+            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses, handOutline, handOccluded, occluders)
             : null;
     }
 
     /// <summary>
-    /// True when the hand's on-screen bounding box overlaps a visible node, i.e. the scene is drawn
-    /// over the presenter's hand.
+    /// True when the hand's on-screen bounding box overlaps one of the occluder rectangles (visible
+    /// scene nodes), i.e. the scene is drawn over the presenter's hand.
     /// </summary>
-    private bool IsHandOccluded(IReadOnlyList<Vector2> normalizedLandmarks)
+    private bool IsHandOccluded(
+        IReadOnlyList<Vector2> normalizedLandmarks,
+        IReadOnlyList<(Vector2 Min, Vector2 Max)> occluders)
     {
-        if (normalizedLandmarks.Count == 0)
+        if (normalizedLandmarks.Count == 0 || occluders.Count == 0)
             return false;
 
         var viewport = SceneViewControl.ViewportSize;
@@ -798,10 +802,17 @@ public partial class MainWindow : Window
             max = new Vector2(MathF.Max(max.X, landmark.X), MathF.Max(max.Y, landmark.Y));
         }
 
-        return _visualizationEngine.IsScreenRectOverScene(
-            new Vector2(min.X * viewport.X, min.Y * viewport.Y),
-            new Vector2(max.X * viewport.X, max.Y * viewport.Y),
-            viewport);
+        var screenMin = new Vector2(min.X * viewport.X, min.Y * viewport.Y);
+        var screenMax = new Vector2(max.X * viewport.X, max.Y * viewport.Y);
+
+        foreach (var rect in occluders)
+        {
+            if (screenMax.X >= rect.Min.X && screenMin.X <= rect.Max.X &&
+                screenMax.Y >= rect.Min.Y && screenMin.Y <= rect.Max.Y)
+                return true;
+        }
+
+        return false;
     }
 
     private void ToggleHandDebug()

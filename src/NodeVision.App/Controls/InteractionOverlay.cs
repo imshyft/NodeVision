@@ -42,4 +42,5 @@ public sealed record InteractionOverlay(
     bool HoverExpanded,
     IReadOnlyList<InteractionPulse> Pulses,
     IReadOnlyList<Vector2> HandOutline,
-    bool HandOccluded);
+    bool HandOccluded,
+    IReadOnlyList<(Vector2 Min, Vector2 Max)> Occluders);

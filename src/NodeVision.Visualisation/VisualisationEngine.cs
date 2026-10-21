@@ -212,6 +212,27 @@ namespace NodeVision.Visualisation
         }
 
         /// <summary>
+        /// Screen rectangles of every currently visible node. Used by the hand overlay to fade its
+        /// outline exactly where scene content covers the hand.
+        /// </summary>
+        public IReadOnlyList<(Vector2 Min, Vector2 Max)> VisibleNodeScreenBounds(Vector2 viewportSize)
+        {
+            var bounds = new List<(Vector2 Min, Vector2 Max)>();
+
+            foreach (var node in _graph.Nodes)
+            {
+                if (node.Reveal <= 0.01f)
+                    continue;
+
+                bounds.Add((
+                    CanvasToScreen(node.Position, viewportSize),
+                    CanvasToScreen(node.Position + node.Size, viewportSize)));
+            }
+
+            return bounds;
+        }
+
+        /// <summary>
         /// True when any visible node's screen rectangle overlaps the given screen rectangle. Used to
         /// tell when scene content is drawn over the presenter's hand.
         /// </summary>

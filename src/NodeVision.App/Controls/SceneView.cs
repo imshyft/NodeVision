@@ -501,16 +501,18 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
     private static readonly SKColor HoverExpandable = new(110, 205, 255);
     private static readonly SKColor HoverExpanded = new(110, 225, 150);
 
-    // Same MediaPipe skeleton used by the debug view.
+    // Hand bones for the occluded outline. The two palm-to-wrist edges are deliberately omitted so
+    // the outline does not run down to the base of the wrist.
     private static readonly (int A, int B)[] HandConnections =
     {
         (0, 1), (1, 2), (2, 3), (3, 4),
-        (0, 5), (5, 6), (6, 7), (7, 8),
+        (5, 6), (6, 7), (7, 8),
         (5, 9), (9, 10), (10, 11), (11, 12),
         (9, 13), (13, 14), (14, 15), (15, 16),
         (13, 17), (17, 18), (18, 19), (19, 20),
-        (0, 17),
     };
+
+    private static readonly int[] Fingertips = { 4, 8, 12, 16, 20 };
 
     private readonly Rect _bounds;
     private readonly InteractionOverlay _overlay;
@@ -552,9 +554,8 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
     }
 
     /// <summary>
-    /// A soft, glowing hand outline drawn when the scene content covers the presenter's hand, so the
-    /// hand stays visible through the cards. Uses simple capsule strokes and a filled palm rather than
-    /// a hand model.
+    /// Draws only the parts of the hand outline that sit over scene content, fading out as the hand
+    /// emerges from behind a card. Simple capsule strokes, all semi-transparent.
     /// </summary>
     private void DrawHandOutline(SKCanvas canvas)
     {
@@ -566,80 +567,90 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
         for (var i = 0; i < landmarks.Count; i++)
             points[i] = Map(landmarks[i]);
 
-        // Scale the strokes to the hand's on-screen size so it looks the same near and far.
         var unit = Math.Clamp(Distance(points[0], points[9]), 45f, 220f);
-        var coreWidth = unit * 0.055f;
-        var blur = MathF.Max(2f, unit * 0.06f);
+        var fade = unit * 0.3f;
+        var thinWidth = unit * 0.045f;
 
-        var glowColour = new SKColor(170, 225, 255);
-        var coreColour = new SKColor(240, 250, 255);
+        var glowColour = new SKColor(150, 210, 255);
+        var lineColour = new SKColor(220, 240, 255);
 
         using var glow = new SKPaint
         {
-            Color = glowColour.WithAlpha(55),
             IsAntialias = true,
             Style = SKPaintStyle.Stroke,
-            StrokeWidth = unit * 0.2f,
+            StrokeWidth = unit * 0.15f,
             StrokeCap = SKStrokeCap.Round,
             StrokeJoin = SKStrokeJoin.Round,
-            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, blur),
+            Color = glowColour.WithAlpha(30),
         };
-        using var mid = new SKPaint
+        using var line = new SKPaint
         {
-            Color = glowColour.WithAlpha(120),
             IsAntialias = true,
             Style = SKPaintStyle.Stroke,
-            StrokeWidth = coreWidth * 2.2f,
+            StrokeWidth = thinWidth,
             StrokeCap = SKStrokeCap.Round,
             StrokeJoin = SKStrokeJoin.Round,
+            Color = lineColour.WithAlpha(130),
         };
-        using var core = new SKPaint
+
+        const int steps = 10;
+
+        foreach (var (a, b) in HandConnections)
         {
-            Color = coreColour.WithAlpha(235),
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = coreWidth,
-            StrokeCap = SKStrokeCap.Round,
-            StrokeJoin = SKStrokeJoin.Round,
-        };
+            for (var step = 0; step < steps; step++)
+            {
+                var p0 = Lerp(points[a], points[b], step / (float)steps);
+                var p1 = Lerp(points[a], points[b], (step + 1) / (float)steps);
+                var mid = Lerp(p0, p1, 0.5f);
 
-        using var palmBuilder = new SKPathBuilder();
-        palmBuilder.MoveTo(points[0]);
-        palmBuilder.LineTo(points[2]);
-        palmBuilder.LineTo(points[5]);
-        palmBuilder.LineTo(points[9]);
-        palmBuilder.LineTo(points[13]);
-        palmBuilder.LineTo(points[17]);
-        palmBuilder.Close();
-        using var palm = palmBuilder.Detach();
+                var strength = OcclusionStrength(mid, _overlay.Occluders, fade);
+                if (strength <= 0.01f)
+                    continue;
 
-        using var palmFill = new SKPaint
+                glow.Color = glowColour.WithAlpha((byte)(strength * 34f));
+                canvas.DrawLine(p0, p1, glow);
+
+                line.Color = lineColour.WithAlpha((byte)(strength * 130f));
+                canvas.DrawLine(p0, p1, line);
+            }
+        }
+
+        using var tip = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+        foreach (var index in Fingertips)
         {
-            Color = coreColour.WithAlpha(38),
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill,
-        };
-        canvas.DrawPath(palm, palmFill);
+            var strength = OcclusionStrength(points[index], _overlay.Occluders, fade);
+            if (strength <= 0.01f)
+                continue;
 
-        DrawHandBones(canvas, points, glow);
-        DrawHandBones(canvas, points, mid);
-        DrawHandBones(canvas, points, core);
-
-        using var tip = new SKPaint
-        {
-            Color = coreColour.WithAlpha(235),
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill,
-        };
-
-        foreach (var index in new[] { 4, 8, 12, 16, 20 })
-            canvas.DrawCircle(points[index], coreWidth * 0.9f, tip);
+            tip.Color = lineColour.WithAlpha((byte)(strength * 120f));
+            canvas.DrawCircle(points[index], thinWidth * 0.9f, tip);
+        }
     }
 
-    private static void DrawHandBones(SKCanvas canvas, SKPoint[] points, SKPaint paint)
+    private static SKPoint Lerp(SKPoint a, SKPoint b, float t) => new(
+        a.X + (b.X - a.X) * t,
+        a.Y + (b.Y - a.Y) * t);
+
+    /// <summary>
+    /// 1 inside an occluder, ramping to 0 a little way outside it, so the outline fades out as it
+    /// leaves the card instead of stopping abruptly.
+    /// </summary>
+    private static float OcclusionStrength(SKPoint point, IReadOnlyList<(Vector2 Min, Vector2 Max)> occluders, float fade)
     {
-        foreach (var (a, b) in HandConnections)
-            canvas.DrawLine(points[a], points[b], paint);
+        if (occluders.Count == 0 || fade <= 0f)
+            return 0f;
+
+        var best = 0f;
+        foreach (var rect in occluders)
+        {
+            var dx = MathF.Max(MathF.Max(rect.Min.X - point.X, 0f), point.X - rect.Max.X);
+            var dy = MathF.Max(MathF.Max(rect.Min.Y - point.Y, 0f), point.Y - rect.Max.Y);
+            var distance = MathF.Sqrt(dx * dx + dy * dy);
+            var strength = 1f - Math.Clamp(distance / fade, 0f, 1f);
+            best = MathF.Max(best, strength);
+        }
+
+        return best;
     }
 
     private SKPoint Map(Vector2 normalized) => new(

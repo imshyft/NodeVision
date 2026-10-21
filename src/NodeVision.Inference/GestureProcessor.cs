@@ -50,6 +50,7 @@ public readonly record struct HandStateDiagnostics(
     float RingPalmRatio,
     float PinkyPalmRatio,
     float MiddleThumbRatio,
+    float PalmWidthRatio,
     HandState Candidate,
     HandState Confirmed);
 
@@ -91,6 +92,12 @@ public sealed class GestureProcessor
     // so require the index to be at least this straight (direct MCP->tip over segment length).
     // Starting guess - tune against a real hand.
     private const float PinchMinIndexStraightness = 0.5f;
+
+    // Zoom requires the palm turned away from the camera, like gripping a knob (the reference pose).
+    // When the palm faces the camera the knuckle span (index MCP -> pinky MCP) is wide; turning the
+    // hand edge-on foreshortens it. Requiring that foreshortening stops a straight-on pinch during an
+    // expand/collapse from briefly starting a zoom. Starting guess - tune against a real hand.
+    private const float PinchMaxPalmWidthRatio = 0.6f;
 
     // How long a candidate Open/Closed/Pointing reading must hold before
     // it's confirmed and reported. Short - this is noise rejection, not a
@@ -218,7 +225,12 @@ public sealed class GestureProcessor
         var indexStraightness = FingerStraightness(landmarks[5], landmarks[6], landmarks[7], landmarks[8]);
         var indexReaching = indexStraightness >= PinchMinIndexStraightness;
 
-        var strength = otherFingersCurled && indexReaching
+        // And the palm has to be turned edge-on. A straight-on pinch (palm facing the camera) is what
+        // briefly appears during open/fist transitions, so it must not start a zoom.
+        var palmWidthRatio = Distance(landmarks[5], landmarks[17]) / handSize;
+        var palmTurnedAway = palmWidthRatio <= PinchMaxPalmWidthRatio;
+
+        var strength = otherFingersCurled && indexReaching && palmTurnedAway
             ? 1f - InverseLerpClamped(ClosedDistanceRatio, OpenDistanceRatio, normalizedDistance)
             : 0f;
         var position = new Vector2((thumbTip.X + indexTip.X) / 2f, (thumbTip.Y + indexTip.Y) / 2f);
@@ -349,10 +361,11 @@ public sealed class GestureProcessor
         var pinkyFolded = pinkyPalm < CurledIntoPalmRatio;
 
         var middleThumbRatio = Distance(landmarks[4], landmarks[12]) / handSize;
+        var palmWidthRatio = Distance(landmarks[5], landmarks[17]) / handSize;
 
         diagnosticsSoFar = new HandStateDiagnostics(
             indexCurled, indexExtended, indexStraightness, middleCurled, ringCurled, pinkyCurled, indexPointingUp,
-            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm, middleThumbRatio,
+            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm, middleThumbRatio, palmWidthRatio,
             Candidate: HandState.Unknown, Confirmed: HandState.Unknown);
 
         if (indexCurled && middleCurled && ringCurled && pinkyCurled)

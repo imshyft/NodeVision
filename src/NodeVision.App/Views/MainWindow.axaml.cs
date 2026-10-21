@@ -47,6 +47,9 @@ public partial class MainWindow : Window
     private bool _handDebugEnabled;
     private readonly List<string> _handDebugLog = new();
 
+    private bool _helpVisible;
+    private const float PanKeyStep = 80f;
+
     private const float PulseLifetimeSeconds = 0.55f;
     private readonly List<ActivePulse> _interactionPulses = new();
     private bool _pointerInside;
@@ -111,6 +114,35 @@ public partial class MainWindow : Window
         {
             if (_heldKeys.Add(e.Key))
                 ToggleHandDebug();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F2)
+        {
+            if (_heldKeys.Add(e.Key))
+                ToggleGestureHelp();
+            e.Handled = true;
+            return;
+        }
+
+        // Arrow keys repeat while held, which is what you want for nudging the canvas.
+        if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            PanByKey(e.Key);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key is Key.Home or Key.R or Key.F or Key.E or Key.C)
+        {
+            if (!_heldKeys.Add(e.Key))
+            {
+                e.Handled = true;
+                return;
+            }
+
+            HandleNavigationKey(e.Key);
             e.Handled = true;
             return;
         }
@@ -182,7 +214,103 @@ public partial class MainWindow : Window
     {
         DebugGestureText.Text = (_keyboardSource?.BuildDebugText() ?? string.Empty)
             + Environment.NewLine + _handStatus
-            + Environment.NewLine + "F1: toggle hand debug";
+            + Environment.NewLine + "F1: hand debug  |  F2: gesture help  |  arrows: pan  |  E/C: expand/collapse";
+    }
+
+    private void ToggleGestureHelp()
+    {
+        _helpVisible = !_helpVisible;
+        GestureHelpOverlay.IsVisible = _helpVisible;
+
+        if (_helpVisible)
+            GestureHelpText.Text = BuildGestureHelpText();
+    }
+
+    private static string BuildGestureHelpText()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "Pan — point with the index, curl the other fingers, and touch the middle fingertip to the thumb. Flick to glide.",
+            "Zoom — pinch thumb and index, then rotate your hand.",
+            "Collapse — hold a fist over a node.",
+            "Expand — make a quick fist, then open the palm over a node.",
+            string.Empty,
+            "Keyboard — arrows pan · Home/R reset · F focus under pointer · E expand · C collapse · F1 hand debug",
+        });
+    }
+
+    private void HandleNavigationKey(Key key)
+    {
+        switch (key)
+        {
+            case Key.Home:
+            case Key.R:
+                _visualizationEngine.ResetCamera();
+                break;
+
+            case Key.F:
+                FocusHoveredNode();
+                break;
+
+            case Key.E:
+                SetHoveredNodeExpanded(true);
+                break;
+
+            case Key.C:
+                SetHoveredNodeExpanded(false);
+                break;
+        }
+    }
+
+    private void PanByKey(Key key)
+    {
+        var step = key switch
+        {
+            Key.Left => new Vector2(-PanKeyStep, 0f),
+            Key.Right => new Vector2(PanKeyStep, 0f),
+            Key.Up => new Vector2(0f, -PanKeyStep),
+            Key.Down => new Vector2(0f, PanKeyStep),
+            _ => Vector2.Zero,
+        };
+
+        if (step.LengthSquared > 0f)
+            _visualizationEngine.Pan(step);
+    }
+
+    private void FocusHoveredNode()
+    {
+        var canvas = _visualizationEngine.ScreenToCanvas(_pointerPosition, SceneViewControl.ViewportSize);
+        if (_visualizationEngine.HitTestNode(canvas) is not null)
+            _visualizationEngine.FocusOn(canvas);
+    }
+
+    private void SetHoveredNodeExpanded(bool expanded)
+    {
+        var canvas = _visualizationEngine.ScreenToCanvas(_pointerPosition, SceneViewControl.ViewportSize);
+        if (_visualizationEngine.HitTestNode(canvas) is not { } nodeId)
+            return;
+
+        if (expanded && !_visualizationEngine.CanExpand(nodeId))
+            return;
+
+        _visualizationEngine.SetExpanded(nodeId, expanded);
+    }
+
+    private void UpdateGestureModeIndicator()
+    {
+        string? mode = null;
+
+        if (_handSource is not null)
+        {
+            if (_handSource.IsPinching)
+                mode = "ZOOM";
+            else if (_handSource.IsPanActive)
+                mode = "PAN";
+        }
+
+        GestureModeIndicator.IsVisible = mode is not null;
+        if (mode is not null)
+            GestureModeText.Text = mode;
     }
 
     private void LoadAvailableCameras()
@@ -573,6 +701,8 @@ public partial class MainWindow : Window
 
     private void UpdateInteractionOverlay(float deltaTime)
     {
+        UpdateGestureModeIndicator();
+
         for (var i = _interactionPulses.Count - 1; i >= 0; i--)
         {
             var pulse = _interactionPulses[i];

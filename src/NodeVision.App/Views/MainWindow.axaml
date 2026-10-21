@@ -151,5 +151,45 @@
                        TextWrapping="Wrap"/>
         </Border>
 
+        <!-- Always-on mode chip so the presenter can see which gesture is armed -->
+        <Border x:Name="GestureModeIndicator"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,12,0,0"
+                Padding="12,6"
+                CornerRadius="14"
+                Background="#CC000000"
+                IsVisible="False">
+            <TextBlock x:Name="GestureModeText"
+                       Foreground="White"
+                       FontSize="14"
+                       FontWeight="SemiBold"/>
+        </Border>
+
+        <!-- Presenter-facing gesture cheat sheet (F2) -->
+        <Border x:Name="GestureHelpOverlay"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,24"
+                Padding="16"
+                CornerRadius="10"
+                MaxWidth="560"
+                Background="#E6111820"
+                IsVisible="False">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Gestures"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="White"/>
+                <TextBlock x:Name="GestureHelpText"
+                           Foreground="#DDE6F2"
+                           FontSize="13"
+                           TextWrapping="Wrap"/>
+                <TextBlock Text="F2: close help"
+                           Foreground="#8899AA"
+                           FontSize="11"/>
+            </StackPanel>
+        </Border>
+
     </Grid>
 </Window>

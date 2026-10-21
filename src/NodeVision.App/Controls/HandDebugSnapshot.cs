@@ -17,4 +17,5 @@ public sealed record HandDebugSnapshot(
     float PinchStrength,
     Vector2? PinchPosition,
     Vector2? PointPosition,
-    Vector2? PalmCenter);
+    Vector2? PalmCenter,
+    bool Occluded);

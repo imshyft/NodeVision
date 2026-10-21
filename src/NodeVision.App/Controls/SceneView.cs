@@ -347,12 +347,62 @@ internal sealed class HandDebugDrawOperation : ICustomDrawOperation
 
         using (context.PushClip(_bounds))
         {
+            if (_hand.Occluded)
+                DrawOcclusion(canvas);
+
             DrawPalm(canvas);
             DrawSkeleton(canvas);
             DrawJoints(canvas);
             DrawPinch(canvas);
             DrawPoint(canvas);
             DrawPalmCentre(canvas);
+        }
+    }
+
+    /// <summary>
+    /// A translucent hand-shaped glow drawn over whatever scene content covers the hand, so the
+    /// presenter can still see roughly where it is. The regular skeleton is drawn on top of it.
+    /// </summary>
+    private void DrawOcclusion(SKCanvas canvas)
+    {
+        if (_hand.Landmarks.Count == 0)
+            return;
+
+        using var glow = new SKPaint
+        {
+            Color = new SKColor(255, 190, 60, 70),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 18f,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
+        using var fill = new SKPaint
+        {
+            Color = new SKColor(255, 190, 60, 45),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+        };
+
+        foreach (var (a, b) in Connections)
+        {
+            if (a >= _hand.Landmarks.Count || b >= _hand.Landmarks.Count)
+                continue;
+
+            canvas.DrawLine(Map(_hand.Landmarks[a].Position), Map(_hand.Landmarks[b].Position), glow);
+        }
+
+        if (_hand.PalmCenter is { } palm)
+        {
+            var point = Map(palm);
+            canvas.DrawCircle(point, 34f, fill);
+
+            using var font = new SKFont { Size = 12f };
+            using var outline = new SKPaint { Color = new SKColor(0, 0, 0, 220), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3f };
+            using var text = new SKPaint { Color = new SKColor(255, 214, 120), IsAntialias = true, Style = SKPaintStyle.Fill };
+
+            canvas.DrawText("hand behind content", point.X + 42f, point.Y - 24f, SKTextAlign.Left, font, outline);
+            canvas.DrawText("hand behind content", point.X + 42f, point.Y - 24f, SKTextAlign.Left, font, text);
         }
     }
 

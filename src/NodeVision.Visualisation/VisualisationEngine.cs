@@ -212,6 +212,28 @@ namespace NodeVision.Visualisation
         }
 
         /// <summary>
+        /// True when any visible node's screen rectangle overlaps the given screen rectangle. Used to
+        /// tell when scene content is drawn over the presenter's hand.
+        /// </summary>
+        public bool IsScreenRectOverScene(Vector2 min, Vector2 max, Vector2 viewportSize)
+        {
+            foreach (var node in _graph.Nodes)
+            {
+                if (node.Reveal <= 0.01f)
+                    continue;
+
+                var nodeMin = CanvasToScreen(node.Position, viewportSize);
+                var nodeMax = CanvasToScreen(node.Position + node.Size, viewportSize);
+
+                if (max.X >= nodeMin.X && min.X <= nodeMax.X &&
+                    max.Y >= nodeMin.Y && min.Y <= nodeMax.Y)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
         public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);

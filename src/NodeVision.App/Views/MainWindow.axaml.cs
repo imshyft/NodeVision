@@ -831,6 +831,27 @@ public partial class MainWindow : Window
                 palmCenter = new Vector2(_handSource.LastPalmPosition.X / width, _handSource.LastPalmPosition.Y / height);
         }
 
+        var occluded = false;
+        if (debugLandmarks.Count > 0)
+        {
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            var max = new Vector2(float.MinValue, float.MinValue);
+            foreach (var landmark in debugLandmarks)
+            {
+                min = new Vector2(MathF.Min(min.X, landmark.Position.X), MathF.Min(min.Y, landmark.Position.Y));
+                max = new Vector2(MathF.Max(max.X, landmark.Position.X), MathF.Max(max.Y, landmark.Position.Y));
+            }
+
+            var viewport = SceneViewControl.ViewportSize;
+            if (viewport.X > 0f && viewport.Y > 0f)
+            {
+                occluded = _visualizationEngine.IsScreenRectOverScene(
+                    new Vector2(min.X * viewport.X, min.Y * viewport.Y),
+                    new Vector2(max.X * viewport.X, max.Y * viewport.Y),
+                    viewport);
+            }
+        }
+
         return new HandDebugSnapshot(
             debugLandmarks,
             palmKeypoints,
@@ -839,7 +860,8 @@ public partial class MainWindow : Window
             _handSource.LastPinch.Strength,
             pinchPosition,
             pointPosition,
-            palmCenter);
+            palmCenter,
+            occluded);
     }
 
     private string BuildHandDebugText()

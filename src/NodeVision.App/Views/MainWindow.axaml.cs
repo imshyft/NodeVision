@@ -875,6 +875,11 @@ public partial class MainWindow : Window
             var pinch = _handSource.LastPinch;
             text.AppendLine($"  pinch: {pinch.Strength:0.00} ({(_handSource.IsPinching ? "held" : "open")})");
             text.AppendLine($"  roll: {_handSource.LastHandRoll * (180f / MathF.PI):0} deg");
+            text.AppendLine($"  expand: {DescribeExpandState()}");
+            text.AppendLine($"  fist fired:{Flag(_handSource.CollapseFiredThisFist)}  hold:{_handSource.FistHoldElapsedMs}/{HandGestureSource.FistHoldMs}ms");
+
+            if (_handSource.LastStateChange is { } change)
+                text.AppendLine($"  last change: {change.PreviousState} -> {change.NewState}");
 
             if (_handSource.LastGesture is { } gesture)
                 text.AppendLine($"  last gesture: {gesture.Kind} {gesture.Phase} mag={gesture.Magnitude:0.00}");
@@ -891,6 +896,33 @@ public partial class MainWindow : Window
     }
 
     private static string Flag(bool value) => value ? "Y" : "n";
+
+    /// <summary>
+    /// Explains how close this frame is to firing an expand, so the F1 overlay can show why it did or
+    /// did not happen.
+    /// </summary>
+    private string DescribeExpandState()
+    {
+        if (_handSource is null)
+            return "n/a";
+
+        if (_handSource.ExpandArmed)
+            return "ARMED - expanding this frame";
+
+        if (_handSource.Diagnostics is not { } state)
+            return "no hand";
+
+        if (state.Confirmed == HandState.Closed && state.Candidate == HandState.Open)
+            return "opening - waiting for Open to confirm";
+
+        if (state.Confirmed == HandState.Closed && _handSource.CollapseFiredThisFist)
+            return "blocked - this fist already collapsed; open will NOT expand";
+
+        if (state.Confirmed == HandState.Closed)
+            return "fist held - open before the hold fires to expand";
+
+        return "idle - close the hand, then open it";
+    }
 
     private void OnWebcamFrameCaptured(WebcamFrame frame)
     {

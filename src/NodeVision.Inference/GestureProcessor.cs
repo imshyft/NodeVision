@@ -271,12 +271,12 @@ public sealed class GestureProcessor
     }
 
     /// <summary>
-    /// Roll of the hand about the camera axis, from the angle of the knuckle line (index MCP ->
-    /// pinky MCP) in the frame. Uses two stable knuckle landmarks, so it is unaffected by how the
-    /// fingers are curled.
+    /// Roll of the wrist about the camera axis, from the angle of the wrist -> middle-MCP axis in the
+    /// frame. Rotating the wrist changes it, which is what drives twist-to-zoom. This axis stays
+    /// readable when the hand is turned edge-on (unlike the knuckle line, which foreshortens).
     /// </summary>
     private static float HandRoll(HandLandmark[] landmarks)
-        => MathF.Atan2(landmarks[17].Y - landmarks[5].Y, landmarks[17].X - landmarks[5].X);
+        => MathF.Atan2(landmarks[9].Y - landmarks[0].Y, landmarks[9].X - landmarks[0].X);
 
     /// <summary>
     /// A finger is "curled" when its tip has folded back closer to the

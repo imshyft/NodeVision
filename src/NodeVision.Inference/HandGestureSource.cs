@@ -10,7 +10,7 @@ public sealed class HandGestureSource : IGestureSource
 {
     // Open/fist only fire after being held this long, so relaxing the pointing pose to stop a pan
     // is not immediately interpreted as an expand/collapse.
-    private const long FistHoldMs = 450;
+    public const long FistHoldMs = 450;
 
     private readonly InferenceEngine _inferenceEngine;
     private readonly GestureProcessor _gestureProcessor = new();
@@ -72,6 +72,18 @@ public sealed class HandGestureSource : IGestureSource
 
     /// <summary>Most recently emitted gesture, for debug overlays.</summary>
     public GestureEvent? LastGesture { get; private set; }
+
+    /// <summary>Last confirmed state change, for the expand diagnostic.</summary>
+    public HandStateChangedEvent? LastStateChange { get; private set; }
+
+    /// <summary>True once the current fist episode has already fired a collapse.</summary>
+    public bool CollapseFiredThisFist => _fistTriggered;
+
+    /// <summary>How long the fist has been held this episode (ms), or 0 when not in a fist.</summary>
+    public long FistHoldElapsedMs => _fistSinceMs < 0 ? 0 : Environment.TickCount64 - _fistSinceMs;
+
+    /// <summary>True when a Closed -> Open transition has just armed an expand.</summary>
+    public bool ExpandArmed => _expandArmed;
 
     public void Start()
     {
@@ -143,9 +155,11 @@ public sealed class HandGestureSource : IGestureSource
 
         var diagnostics = _gestureProcessor.LastDiagnostics;
         var confirmed = diagnostics?.Confirmed ?? HandState.Unknown;
+        var pinching = _gestureProcessor.IsPinching;
         var now = Environment.TickCount64;
 
-        if (confirmed == HandState.Closed)
+        // Zooming also curls the hand; it must not be read as a fist and collapse a node.
+        if (confirmed == HandState.Closed && !pinching)
         {
             if (_fistSinceMs < 0)
                 _fistSinceMs = now;
@@ -161,8 +175,10 @@ public sealed class HandGestureSource : IGestureSource
             _fistSinceMs = -1;
 
             // On the frame the hand opens, OnHandStateChanged has already read this to decide whether
-            // the fist collapsed the node; only clear it after that.
-            _fistTriggered = false;
+            // the fist collapsed the node; only clear it after that. Keep it while pinching so a
+            // collapse before a zoom still suppresses the following expand.
+            if (!pinching)
+                _fistTriggered = false;
         }
     }
 
@@ -180,6 +196,8 @@ public sealed class HandGestureSource : IGestureSource
 
     private void OnHandStateChanged(HandStateChangedEvent change)
     {
+        LastStateChange = change;
+
         // The pan edge (Point) is driven per-frame by IsPanActive, not by this confirmed transition.
         // Expand only when the palm opens after being closed. Releasing a point (Pointing -> Open)
         // must not expand, and neither must opening after a fist that already collapsed the node.

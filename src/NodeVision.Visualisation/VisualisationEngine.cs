@@ -222,8 +222,14 @@ namespace NodeVision.Visualisation
         /// </summary>
         public void SetExpanded(int nodeId, bool expanded)
         {
-            if (_graph.Contains(nodeId))
-                Expansion.SetExpanded(nodeId, expanded);
+            if (!_graph.Contains(nodeId))
+                return;
+
+            Expansion.SetExpanded(nodeId, expanded);
+
+            // Expanding should bring the node into view; collapsing leaves the camera where it is.
+            if (expanded)
+                FocusOnNode(nodeId);
         }
 
         /// <summary>
@@ -348,7 +354,9 @@ namespace NodeVision.Visualisation
             if (!_graph.TryGetNode(nodeId, out var node))
                 return false;
 
-            var centre = node.Position + node.Size * 0.5f;
+            // Use the authored position: a child mid-reveal is still travelling out of its parent,
+            // but the camera should end up where the node will settle.
+            var centre = _graph.AuthoredPosition(nodeId) + node.Size * 0.5f;
             StartCameraAnimation(centre, FitZoomFor(node.Size));
             return true;
         }

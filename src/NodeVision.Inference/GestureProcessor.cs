@@ -238,7 +238,9 @@ public sealed class GestureProcessor
 
         // Read from this frame's geometry, not the confirmed state, so separating the middle finger
         // from the thumb ends the pan on the next frame instead of after the confirmation delay.
-        IsPanActive = diagnosticsSoFar.IndexExtended &&
+        // Pan yields to pinch so a zoom grab can never also drag the canvas.
+        IsPanActive = !_isPinching &&
+                      diagnosticsSoFar.IndexExtended &&
                       diagnosticsSoFar.MiddleFolded &&
                       diagnosticsSoFar.RingFolded &&
                       diagnosticsSoFar.PinkyFolded &&

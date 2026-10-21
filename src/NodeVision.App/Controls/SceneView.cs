@@ -347,62 +347,12 @@ internal sealed class HandDebugDrawOperation : ICustomDrawOperation
 
         using (context.PushClip(_bounds))
         {
-            if (_hand.Occluded)
-                DrawOcclusion(canvas);
-
             DrawPalm(canvas);
             DrawSkeleton(canvas);
             DrawJoints(canvas);
             DrawPinch(canvas);
             DrawPoint(canvas);
             DrawPalmCentre(canvas);
-        }
-    }
-
-    /// <summary>
-    /// A translucent hand-shaped glow drawn over whatever scene content covers the hand, so the
-    /// presenter can still see roughly where it is. The regular skeleton is drawn on top of it.
-    /// </summary>
-    private void DrawOcclusion(SKCanvas canvas)
-    {
-        if (_hand.Landmarks.Count == 0)
-            return;
-
-        using var glow = new SKPaint
-        {
-            Color = new SKColor(255, 190, 60, 70),
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 18f,
-            StrokeCap = SKStrokeCap.Round,
-            StrokeJoin = SKStrokeJoin.Round,
-        };
-        using var fill = new SKPaint
-        {
-            Color = new SKColor(255, 190, 60, 45),
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill,
-        };
-
-        foreach (var (a, b) in Connections)
-        {
-            if (a >= _hand.Landmarks.Count || b >= _hand.Landmarks.Count)
-                continue;
-
-            canvas.DrawLine(Map(_hand.Landmarks[a].Position), Map(_hand.Landmarks[b].Position), glow);
-        }
-
-        if (_hand.PalmCenter is { } palm)
-        {
-            var point = Map(palm);
-            canvas.DrawCircle(point, 34f, fill);
-
-            using var font = new SKFont { Size = 12f };
-            using var outline = new SKPaint { Color = new SKColor(0, 0, 0, 220), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3f };
-            using var text = new SKPaint { Color = new SKColor(255, 214, 120), IsAntialias = true, Style = SKPaintStyle.Fill };
-
-            canvas.DrawText("hand behind content", point.X + 42f, point.Y - 24f, SKTextAlign.Left, font, outline);
-            canvas.DrawText("hand behind content", point.X + 42f, point.Y - 24f, SKTextAlign.Left, font, text);
         }
     }
 
@@ -551,6 +501,17 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
     private static readonly SKColor HoverExpandable = new(110, 205, 255);
     private static readonly SKColor HoverExpanded = new(110, 225, 150);
 
+    // Same MediaPipe skeleton used by the debug view.
+    private static readonly (int A, int B)[] HandConnections =
+    {
+        (0, 1), (1, 2), (2, 3), (3, 4),
+        (0, 5), (5, 6), (6, 7), (7, 8),
+        (5, 9), (9, 10), (10, 11), (11, 12),
+        (9, 13), (13, 14), (14, 15), (15, 16),
+        (13, 17), (17, 18), (18, 19), (19, 20),
+        (0, 17),
+    };
+
     private readonly Rect _bounds;
     private readonly InteractionOverlay _overlay;
 
@@ -581,10 +542,115 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
 
         using (context.PushClip(_bounds))
         {
+            if (_overlay.HandOccluded)
+                DrawHandOutline(canvas);
+
             DrawHover(canvas);
             DrawPulses(canvas);
             DrawCursor(canvas);
         }
+    }
+
+    /// <summary>
+    /// A soft, glowing hand outline drawn when the scene content covers the presenter's hand, so the
+    /// hand stays visible through the cards. Uses simple capsule strokes and a filled palm rather than
+    /// a hand model.
+    /// </summary>
+    private void DrawHandOutline(SKCanvas canvas)
+    {
+        var landmarks = _overlay.HandOutline;
+        if (landmarks.Count < 21)
+            return;
+
+        var points = new SKPoint[landmarks.Count];
+        for (var i = 0; i < landmarks.Count; i++)
+            points[i] = Map(landmarks[i]);
+
+        // Scale the strokes to the hand's on-screen size so it looks the same near and far.
+        var unit = Math.Clamp(Distance(points[0], points[9]), 45f, 220f);
+        var coreWidth = unit * 0.055f;
+        var blur = MathF.Max(2f, unit * 0.06f);
+
+        var glowColour = new SKColor(170, 225, 255);
+        var coreColour = new SKColor(240, 250, 255);
+
+        using var glow = new SKPaint
+        {
+            Color = glowColour.WithAlpha(55),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = unit * 0.2f,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, blur),
+        };
+        using var mid = new SKPaint
+        {
+            Color = glowColour.WithAlpha(120),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = coreWidth * 2.2f,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
+        using var core = new SKPaint
+        {
+            Color = coreColour.WithAlpha(235),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = coreWidth,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
+
+        using var palmBuilder = new SKPathBuilder();
+        palmBuilder.MoveTo(points[0]);
+        palmBuilder.LineTo(points[2]);
+        palmBuilder.LineTo(points[5]);
+        palmBuilder.LineTo(points[9]);
+        palmBuilder.LineTo(points[13]);
+        palmBuilder.LineTo(points[17]);
+        palmBuilder.Close();
+        using var palm = palmBuilder.Detach();
+
+        using var palmFill = new SKPaint
+        {
+            Color = coreColour.WithAlpha(38),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+        };
+        canvas.DrawPath(palm, palmFill);
+
+        DrawHandBones(canvas, points, glow);
+        DrawHandBones(canvas, points, mid);
+        DrawHandBones(canvas, points, core);
+
+        using var tip = new SKPaint
+        {
+            Color = coreColour.WithAlpha(235),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+        };
+
+        foreach (var index in new[] { 4, 8, 12, 16, 20 })
+            canvas.DrawCircle(points[index], coreWidth * 0.9f, tip);
+    }
+
+    private static void DrawHandBones(SKCanvas canvas, SKPoint[] points, SKPaint paint)
+    {
+        foreach (var (a, b) in HandConnections)
+            canvas.DrawLine(points[a], points[b], paint);
+    }
+
+    private SKPoint Map(Vector2 normalized) => new(
+        (float)(_bounds.X + normalized.X * _bounds.Width),
+        (float)(_bounds.Y + normalized.Y * _bounds.Height));
+
+    private static float Distance(SKPoint a, SKPoint b)
+    {
+        var dx = a.X - b.X;
+        var dy = a.Y - b.Y;
+        return MathF.Sqrt(dx * dx + dy * dy);
     }
 
     private void DrawHover(SKCanvas canvas)

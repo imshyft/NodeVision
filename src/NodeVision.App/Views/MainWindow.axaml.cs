@@ -716,6 +716,8 @@ public partial class MainWindow : Window
 
         var viewport = SceneViewControl.ViewportSize;
 
+        var handOutline = new List<Vector2>();
+        var handOccluded = false;
         Vector2? handCursor = null;
         var pointer = PointerGesture.None;
 
@@ -723,6 +725,15 @@ public partial class MainWindow : Window
             _handSource.FrameWidth > 0 && _handSource.FrameHeight > 0 &&
             _handSource.LastLandmarks.Length >= 21)
         {
+            foreach (var landmark in _handSource.LastLandmarks)
+            {
+                handOutline.Add(new Vector2(
+                    landmark.X / _handSource.FrameWidth,
+                    landmark.Y / _handSource.FrameHeight));
+            }
+
+            handOccluded = IsHandOccluded(handOutline);
+
             if (_handSource.IsPinching)
                 pointer = PointerGesture.Pinching;
             else if (_handSource.IsPanActive || _handSource.Diagnostics?.Confirmed == HandState.Pointing)
@@ -760,9 +771,37 @@ public partial class MainWindow : Window
                 Math.Clamp(pulse.Age / PulseLifetimeSeconds, 0f, 1f),
                 pulse.Kind));
 
-        SceneViewControl.Interaction = handCursor is not null || hoverBounds is not null || pulses.Count > 0
-            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses)
+        SceneViewControl.Interaction = handCursor is not null || hoverBounds is not null || pulses.Count > 0 || handOccluded
+            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses, handOutline, handOccluded)
             : null;
+    }
+
+    /// <summary>
+    /// True when the hand's on-screen bounding box overlaps a visible node, i.e. the scene is drawn
+    /// over the presenter's hand.
+    /// </summary>
+    private bool IsHandOccluded(IReadOnlyList<Vector2> normalizedLandmarks)
+    {
+        if (normalizedLandmarks.Count == 0)
+            return false;
+
+        var viewport = SceneViewControl.ViewportSize;
+        if (viewport.X <= 0f || viewport.Y <= 0f)
+            return false;
+
+        var min = new Vector2(float.MaxValue, float.MaxValue);
+        var max = new Vector2(float.MinValue, float.MinValue);
+
+        foreach (var landmark in normalizedLandmarks)
+        {
+            min = new Vector2(MathF.Min(min.X, landmark.X), MathF.Min(min.Y, landmark.Y));
+            max = new Vector2(MathF.Max(max.X, landmark.X), MathF.Max(max.Y, landmark.Y));
+        }
+
+        return _visualizationEngine.IsScreenRectOverScene(
+            new Vector2(min.X * viewport.X, min.Y * viewport.Y),
+            new Vector2(max.X * viewport.X, max.Y * viewport.Y),
+            viewport);
     }
 
     private void ToggleHandDebug()
@@ -831,27 +870,6 @@ public partial class MainWindow : Window
                 palmCenter = new Vector2(_handSource.LastPalmPosition.X / width, _handSource.LastPalmPosition.Y / height);
         }
 
-        var occluded = false;
-        if (debugLandmarks.Count > 0)
-        {
-            var min = new Vector2(float.MaxValue, float.MaxValue);
-            var max = new Vector2(float.MinValue, float.MinValue);
-            foreach (var landmark in debugLandmarks)
-            {
-                min = new Vector2(MathF.Min(min.X, landmark.Position.X), MathF.Min(min.Y, landmark.Position.Y));
-                max = new Vector2(MathF.Max(max.X, landmark.Position.X), MathF.Max(max.Y, landmark.Position.Y));
-            }
-
-            var viewport = SceneViewControl.ViewportSize;
-            if (viewport.X > 0f && viewport.Y > 0f)
-            {
-                occluded = _visualizationEngine.IsScreenRectOverScene(
-                    new Vector2(min.X * viewport.X, min.Y * viewport.Y),
-                    new Vector2(max.X * viewport.X, max.Y * viewport.Y),
-                    viewport);
-            }
-        }
-
         return new HandDebugSnapshot(
             debugLandmarks,
             palmKeypoints,
@@ -860,8 +878,7 @@ public partial class MainWindow : Window
             _handSource.LastPinch.Strength,
             pinchPosition,
             pointPosition,
-            palmCenter,
-            occluded);
+            palmCenter);
     }
 
     private string BuildHandDebugText()

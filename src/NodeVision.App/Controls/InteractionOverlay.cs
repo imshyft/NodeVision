@@ -40,4 +40,6 @@ public sealed record InteractionOverlay(
     PointerGesture Pointer,
     (Vector2 Min, Vector2 Max)? HoverBounds,
     bool HoverExpanded,
-    IReadOnlyList<InteractionPulse> Pulses);
+    IReadOnlyList<InteractionPulse> Pulses,
+    IReadOnlyList<Vector2> HandOutline,
+    bool HandOccluded);

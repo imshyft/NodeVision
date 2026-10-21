@@ -49,6 +49,7 @@ public readonly record struct HandStateDiagnostics(
     float MiddlePalmRatio,
     float RingPalmRatio,
     float PinkyPalmRatio,
+    float MiddleThumbRatio,
     HandState Candidate,
     HandState Confirmed);
 
@@ -106,7 +107,12 @@ public sealed class GestureProcessor
     // as a fraction of the hand size (wrist -> middle MCP); a fully tucked
     // finger sits well under this. Lower values are stricter. Starting guess
     // - tune against a real hand.
-    private const float CurledIntoPalmRatio = 0.4f;
+    private const float CurledIntoPalmRatio = 0.6f;
+
+    // Panning is a "grab": the middle fingertip must be touching the thumb. Distance is measured
+    // relative to hand size. Checked every frame with no confirmation delay, so separating the two
+    // fingers ends the pan immediately instead of latching. Starting guess - tune against a hand.
+    private const float PanMiddleThumbContactRatio = 0.55f;
 
     // Pointing requires the index finger to be almost fully extended. Measured as the ratio of the
     // direct MCP->tip distance to the sum of the three finger segments: a straight finger is ~1.0
@@ -157,6 +163,13 @@ public sealed class GestureProcessor
     public bool IsPinching => _isPinching;
 
     /// <summary>
+    /// True on frames where the hand is making the pan "grab": index extended, ring and pinky curled
+    /// into the palm, and the middle fingertip touching the thumb. Evaluated every frame with no
+    /// confirmation delay, so separating the middle finger from the thumb ends the pan immediately.
+    /// </summary>
+    public bool IsPanActive { get; private set; }
+
+    /// <summary>
     /// Feed one frame's raw (unsmoothed) hand landmarks in. Call once per
     /// InferenceEngine.InferenceCompleted, including with an empty array
     /// when no hand is tracked, so pinch state resets correctly.
@@ -169,6 +182,7 @@ public sealed class GestureProcessor
             ResetHandStateCandidate();
             LastDiagnostics = null;
             LastSmoothedLandmarks = Array.Empty<HandLandmark>();
+            IsPanActive = false;
             return;
         }
 
@@ -186,6 +200,7 @@ public sealed class GestureProcessor
             ResetPinchState();
             ResetHandStateCandidate();
             LastDiagnostics = null;
+            IsPanActive = false;
             return;
         }
 
@@ -220,6 +235,14 @@ public sealed class GestureProcessor
         var candidate = ClassifyHandState(landmarks, wrist, out var diagnosticsSoFar);
         UpdateHandState(candidate);
         LastDiagnostics = diagnosticsSoFar with { Candidate = candidate, Confirmed = _confirmedState };
+
+        // Read from this frame's geometry, not the confirmed state, so separating the middle finger
+        // from the thumb ends the pan on the next frame instead of after the confirmation delay.
+        IsPanActive = diagnosticsSoFar.IndexExtended &&
+                      diagnosticsSoFar.MiddleFolded &&
+                      diagnosticsSoFar.RingFolded &&
+                      diagnosticsSoFar.PinkyFolded &&
+                      diagnosticsSoFar.MiddleThumbRatio <= PanMiddleThumbContactRatio;
     }
 
     /// <summary>
@@ -323,9 +346,11 @@ public sealed class GestureProcessor
         var ringFolded = ringPalm < CurledIntoPalmRatio;
         var pinkyFolded = pinkyPalm < CurledIntoPalmRatio;
 
+        var middleThumbRatio = Distance(landmarks[4], landmarks[12]) / handSize;
+
         diagnosticsSoFar = new HandStateDiagnostics(
             indexCurled, indexExtended, indexStraightness, middleCurled, ringCurled, pinkyCurled, indexPointingUp,
-            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm,
+            middleFolded, ringFolded, pinkyFolded, middlePalm, ringPalm, pinkyPalm, middleThumbRatio,
             Candidate: HandState.Unknown, Confirmed: HandState.Unknown);
 
         if (indexCurled && middleCurled && ringCurled && pinkyCurled)

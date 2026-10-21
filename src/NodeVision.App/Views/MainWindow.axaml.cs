@@ -51,6 +51,12 @@ public partial class MainWindow : Window
     private readonly List<ActivePulse> _interactionPulses = new();
     private bool _pointerInside;
 
+    private readonly PanInertia _panInertia = new();
+    private Vector2 _panDeltaThisTick;
+    private bool _panGestureStarted;
+    private bool _panGestureEnded;
+    private bool _stopInertia;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -407,6 +413,7 @@ public partial class MainWindow : Window
             // Clamped so a stall does not jump an animation straight to its end.
             _visualizationEngine.Update(Math.Min(deltaTime, 0.1f), DrainGestureEvents());
 
+            UpdatePanInertia(Math.Min(deltaTime, 0.1f), now.TotalSeconds);
             UpdateInteractionOverlay(Math.Min(deltaTime, 0.1f));
 
             SceneViewControl.CameraTranslation =
@@ -449,11 +456,58 @@ public partial class MainWindow : Window
         foreach (var gesture in _pendingGestures)
             AddGestureFeedback(gesture);
 
+        _panDeltaThisTick = default;
+        _panGestureStarted = false;
+        _panGestureEnded = false;
+        _stopInertia = false;
+
         _pendingSceneEvents.Clear();
         foreach (var gesture in _pendingGestures)
-            _pendingSceneEvents.AddRange(_gestureToSceneMapper.Map(gesture));
+        {
+            if (gesture.Kind == GestureKind.Point)
+            {
+                if (gesture.Phase == GesturePhase.Started)
+                    _panGestureStarted = true;
+                else if (gesture.Phase == GesturePhase.Ended)
+                    _panGestureEnded = true;
+            }
+            else if (gesture.Phase == GesturePhase.Started)
+            {
+                // Any other gesture takes over from a pan or a fling.
+                _stopInertia = true;
+            }
+
+            var mapped = _gestureToSceneMapper.Map(gesture);
+            for (var i = 0; i < mapped.Count; i++)
+            {
+                if (mapped[i] is PanSceneEvent pan)
+                    _panDeltaThisTick += pan.ScreenDelta;
+
+                _pendingSceneEvents.Add(mapped[i]);
+            }
+        }
 
         return _pendingSceneEvents;
+    }
+
+    /// <summary>
+    /// Applies fling momentum after the gesture-driven events have been handled. Starting a new pan
+    /// stops any running fling, and other gestures cancel it as well.
+    /// </summary>
+    private void UpdatePanInertia(float deltaTime, double now)
+    {
+        if (_stopInertia)
+            _panInertia.Cancel();
+
+        if (_panGestureStarted)
+            _panInertia.Begin(now);
+
+        if (_panGestureEnded)
+            _panInertia.End();
+
+        var inertiaDelta = _panInertia.Update(deltaTime, now, _panDeltaThisTick);
+        if (inertiaDelta.LengthSquared > 0f)
+            _visualizationEngine.Pan(inertiaDelta);
     }
 
     /// <summary>
@@ -538,7 +592,7 @@ public partial class MainWindow : Window
         {
             if (_handSource.IsPinching)
                 pointer = PointerGesture.Pinching;
-            else if (_handSource.Diagnostics?.Confirmed == HandState.Pointing)
+            else if (_handSource.IsPanActive || _handSource.Diagnostics?.Confirmed == HandState.Pointing)
                 pointer = PointerGesture.Pointing;
 
             if (pointer != PointerGesture.None)
@@ -678,6 +732,7 @@ public partial class MainWindow : Window
                 text.AppendLine($"  index: curled:{Flag(diagnostics.IndexCurled)} extended:{Flag(diagnostics.IndexExtended)} straight:{diagnostics.IndexStraightness:0.00} up:{Flag(diagnostics.IndexPointingUp)}");
                 text.AppendLine($"  curled  mid:{Flag(diagnostics.MiddleCurled)} ring:{Flag(diagnostics.RingCurled)} pinky:{Flag(diagnostics.PinkyCurled)}");
                 text.AppendLine($"  folded  mid:{Flag(diagnostics.MiddleFolded)} {diagnostics.MiddlePalmRatio:0.00}  ring:{Flag(diagnostics.RingFolded)} {diagnostics.RingPalmRatio:0.00}  pinky:{Flag(diagnostics.PinkyFolded)} {diagnostics.PinkyPalmRatio:0.00}");
+                text.AppendLine($"  middle-thumb: {diagnostics.MiddleThumbRatio:0.00}  pan: {Flag(_handSource.IsPanActive)}");
             }
             else
             {

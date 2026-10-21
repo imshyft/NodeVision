@@ -4,7 +4,8 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public static class NodeStyle
 {
-    public static Colour Background => new Colour(0.086f, 0.098f, 0.122f);
+    // Slightly translucent so the presenter (webcam) remains visible behind a card.
+    public static Colour Background => new Colour(0.086f, 0.098f, 0.122f, 0.82f);
     public static Colour Border => new Colour(0.169f, 0.192f, 0.235f);
     public static Colour Accent => new Colour(0.208f, 0.435f, 0.702f);
     public static Colour HeaderText => new Colour(0.902f, 0.918f, 0.949f);

@@ -38,7 +38,6 @@ public partial class MainWindow : Window
     private KeyboardGestureSource? _keyboardSource;
     private HandGestureSource? _handSource;
     private InferenceEngine? _inferenceEngine;
-    private string _handStatus = "hand: starting";
 
     private Vector2 _pointerPosition;
     private readonly HashSet<Key> _heldKeys = new();
@@ -103,7 +102,6 @@ public partial class MainWindow : Window
         _keyboardSource = new KeyboardGestureSource();
         _keyboardSource.GestureAvailable += _gestureEvents.Enqueue;
         _keyboardSource.Start();
-        UpdateDebugOverlay();
 
         SceneViewControl.PointerMoved += (_, e) =>
         {
@@ -173,7 +171,6 @@ public partial class MainWindow : Window
         if (_keyboardSource.TryTrigger(e.Key, normalized) is null)
             return;
 
-        UpdateDebugOverlay();
         e.Handled = true;
     }
 
@@ -207,25 +204,14 @@ public partial class MainWindow : Window
             _handSource = new HandGestureSource(_inferenceEngine);
             _handSource.GestureAvailable += _gestureEvents.Enqueue;
             _handSource.Start();
-            _handStatus = "hand: tracking";
         }
         catch (Exception ex)
         {
             _inferenceEngine?.Dispose();
             _inferenceEngine = null;
             _handSource = null;
-            _handStatus = "hand: unavailable";
             Console.WriteLine($"[Gesture] Hand tracking unavailable: {ex.Message}");
         }
-
-        UpdateDebugOverlay();
-    }
-
-    private void UpdateDebugOverlay()
-    {
-        DebugGestureText.Text = (_keyboardSource?.BuildDebugText() ?? string.Empty)
-            + Environment.NewLine + _handStatus
-            + Environment.NewLine + "F1: hand debug  |  F2: gesture help  |  arrows: pan  |  Home: overview  |  R: reset  |  E/C: expand/collapse";
     }
 
     private void ToggleGestureHelp()
@@ -357,7 +343,6 @@ public partial class MainWindow : Window
     {
         SceneViewControl.MirrorWebcam = !SceneViewControl.MirrorWebcam;
         SceneViewControl.InvalidateVisual();
-        FlipCameraButton.Content = SceneViewControl.MirrorWebcam ? "Unflip camera" : "Flip camera";
     }
 
     private void LoadAvailableCameras()
@@ -785,7 +770,8 @@ public partial class MainWindow : Window
 
             if (_handSource.IsPinching)
                 pointer = PointerGesture.Pinching;
-            else if (_handSource.IsPanActive || _handSource.Diagnostics?.Confirmed == HandState.Pointing)
+            else if (_handSource.IsPanActive ||
+                     _handSource.Diagnostics?.Confirmed is HandState.Pointing or HandState.Closed or HandState.Open)
                 pointer = PointerGesture.Pointing;
 
             if (pointer != PointerGesture.None)

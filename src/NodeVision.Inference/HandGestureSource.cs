@@ -10,7 +10,7 @@ public sealed class HandGestureSource : IGestureSource
 {
     // Open/fist only fire after being held this long, so relaxing the pointing pose to stop a pan
     // is not immediately interpreted as an expand/collapse.
-    public const long FistHoldMs = 450;
+    public const long FistHoldMs = 225;
 
     private readonly InferenceEngine _inferenceEngine;
     private readonly GestureProcessor _gestureProcessor = new();

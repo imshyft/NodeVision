@@ -31,8 +31,6 @@ public sealed class KeyboardGestureSource : IGestureSource
         new("5", GestureKind.Twist, -TwistStep, "Zoom out"),
     };
 
-    private string? _last;
-
     private float _roll;
 
     private bool _panHeld;
@@ -65,7 +63,6 @@ public sealed class KeyboardGestureSource : IGestureSource
                 continue;
 
             Emit(binding, normalizedPosition);
-            _last = $"{binding.Label} @ ({normalizedPosition.X:0.00}, {normalizedPosition.Y:0.00})";
             return binding.Label;
         }
 
@@ -123,16 +120,6 @@ public sealed class KeyboardGestureSource : IGestureSource
                 GestureAvailable?.Invoke(new GestureEvent(binding.Kind, GesturePhase.Started, position, 1f));
                 break;
         }
-    }
-
-    public string BuildDebugText()
-    {
-        var lines = new List<string> { "Gesture test keys (mouse = position):" };
-        foreach (var binding in Bindings)
-            lines.Add($"  {binding.Key}   {binding.Label}");
-
-        lines.Add(_last is null ? "  last: (none)" : $"  last: {_last}");
-        return string.Join(Environment.NewLine, lines);
     }
 
     private static string? KeyName(Key key) => key switch

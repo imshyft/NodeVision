@@ -6,13 +6,19 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public class NodeDrawCommandBuilder : DrawCommandBuilder
 {
-    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands)
+    public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands, RenderContext context)
     {
         var node = (Node)sceneObject;
         var reveal = Math.Clamp(node.Reveal, 0f, 1f);
 
         if (reveal <= 0f)
             return; // hidden until its parent reveals it
+
+        // Titles grow as the camera pulls back so the overview stays readable. Deeper nodes grow
+        // less than their ancestors, leaving roots with the largest text when zoomed out.
+        var zoomOut = Math.Clamp(1f - context.CameraZoom, 0f, 0.85f);
+        var depthFactor = 1f / (1f + Math.Max(0, node.Depth) * 0.6f);
+        var titleScale = MathF.Min(1f + zoomOut * 1.6f * depthFactor, 2.2f);
 
         // A card that is still revealing grows out of its own centre, so the metrics scale with it.
         var metrics = 0.85f + 0.15f * reveal;
@@ -24,7 +30,7 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
         var accentInset = NodeStyle.AccentInset * metrics;
         var accentWidth = NodeStyle.AccentWidth * metrics;
         var textInset = NodeStyle.TextInset * metrics;
-        var headerSize = NodeStyle.HeaderSize * metrics;
+        var headerSize = NodeStyle.HeaderSize * metrics * titleScale;
         var headerGap = NodeStyle.HeaderGap * metrics;
         var bodySize = NodeStyle.BodySize * metrics;
 

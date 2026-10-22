@@ -61,6 +61,9 @@ namespace NodeVision.Core
         // Card size and presentation reveal, written by the visualisation and read by the renderer.
         public Vector2 Size { get; set; }
         public float Reveal { get; set; } = 1f;
+
+        // Hierarchy level from the connections: 0 for roots, increasing with each parent hop.
+        public int Depth { get; set; }
     }
 
     public abstract class NodeContent

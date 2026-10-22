@@ -15,7 +15,7 @@ public class RenderBuilder
         { typeof(Node), new NodeDrawCommandBuilder() }
     };
 
-    public List<RenderCommand> BuildScene(Scene scene)
+    public List<RenderCommand> BuildScene(Scene scene, RenderContext context)
     {
         var commands = new List<RenderCommand>();
 
@@ -23,7 +23,7 @@ public class RenderBuilder
         {
             if (_builders.TryGetValue(sceneObject.GetType(), out var builder))
             {
-                builder.BuildCommand(sceneObject, commands);
+                builder.BuildCommand(sceneObject, commands, context);
             }
         }
 

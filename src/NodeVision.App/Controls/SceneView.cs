@@ -201,7 +201,7 @@ public class SceneView : Control, ICustomHitTest
                 RenderTargetSize = new Vector2((float)Bounds.Width, (float)Bounds.Height)
             };
 
-            var commands = _renderBuilder.BuildScene(Scene);
+            var commands = _renderBuilder.BuildScene(Scene, renderContext);
 
             context.Custom(
                 new SceneDrawOperation(

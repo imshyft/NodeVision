@@ -69,6 +69,11 @@ public sealed class SceneGraph
         }
 
         graph.SortDeepestFirst();
+
+        // Cache each node's hierarchy level for depth-based presentation (e.g. title scaling).
+        foreach (var node in graph._nodes)
+            node.Depth = graph.DepthOf(node.Id);
+
         return graph;
     }
 

@@ -10,7 +10,6 @@ namespace NodeVision.Inference;
 public sealed class InferenceEngine : IDisposable
 {
     private readonly WebcamFrameRingBuffer _ringBuffer;
-    private readonly int _consumerId;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _inferenceTask;
     private readonly InferenceSession _palmSession;
@@ -18,6 +17,7 @@ public sealed class InferenceEngine : IDisposable
     private readonly PalmDetector _palmDetector;
     private readonly HandLandmarkDetector _handLandmarkDetector;
     private volatile bool _isRunning;
+    private long _lastProcessedTimestamp = long.MinValue;
 
     public event Action<InferenceResult>? InferenceCompleted;
     public event Action<Exception>? Error;
@@ -30,10 +30,19 @@ public sealed class InferenceEngine : IDisposable
     public InferenceEngine(WebcamFrameRingBuffer ringBuffer, string modelsDirectory)
     {
         _ringBuffer = ringBuffer;
-        _consumerId = ringBuffer.RegisterConsumer();
 
-        _palmSession = new InferenceSession(Path.Combine(modelsDirectory, "hand_detector.onnx"));
-        _landmarkSession = new InferenceSession(Path.Combine(modelsDirectory, "hand_landmarks_detector.onnx"));
+        // Tune the CPU execution provider: spend the cores on intra-op parallelism and leave one
+        // for capture/UI so the app does not fight itself on a laptop.
+        using var options = new SessionOptions
+        {
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
+            ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            IntraOpNumThreads = Math.Max(1, Environment.ProcessorCount - 1),
+            InterOpNumThreads = 1,
+        };
+
+        _palmSession = new InferenceSession(Path.Combine(modelsDirectory, "hand_detector.onnx"), options);
+        _landmarkSession = new InferenceSession(Path.Combine(modelsDirectory, "hand_landmarks_detector.onnx"), options);
         _palmDetector = new PalmDetector(_palmSession);
         _handLandmarkDetector = new HandLandmarkDetector(_landmarkSession);
 
@@ -69,11 +78,14 @@ public sealed class InferenceEngine : IDisposable
         {
             try
             {
-                if (_ringBuffer.TryRead(_consumerId, out var frame))
+                if (_ringBuffer.TryPeekLatest(out var frame) && frame.Timestamp != _lastProcessedTimestamp)
                 {
-                    // Process frame
+                    // Always work on the newest frame: if inference falls behind capture, stale
+                    // frames are skipped instead of being queued up.
+                    _lastProcessedTimestamp = frame.Timestamp;
+
                     var result = await RunInferenceAsync(frame, _cts.Token);
-                    
+
                     if (result != null)
                     {
                         InferenceCompleted?.Invoke(result.Value);
@@ -81,8 +93,7 @@ public sealed class InferenceEngine : IDisposable
                 }
                 else
                 {
-                    // No new frame, yield briefly
-                    await Task.Delay(5, _cts.Token).ConfigureAwait(false);
+                    await Task.Delay(2, _cts.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -140,7 +151,6 @@ public sealed class InferenceEngine : IDisposable
     {
         StopAsync().AsTask().Wait(TimeSpan.FromSeconds(2));
         _cts.Dispose();
-        _ringBuffer.UnregisterConsumer(_consumerId);
         _palmSession.Dispose();
         _landmarkSession.Dispose();
     }

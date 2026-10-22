@@ -63,9 +63,8 @@ public sealed class HandLandmarkDetector
 
     public HandLandmarkResult? Detect(in WebcamFrame frame, PalmDetection palm)
     {
-        using var bgra = Mat.FromPixelData(frame.Height, frame.Width, MatType.CV_8UC4, frame.BgraData.ToArray(), frame.Stride);
         using var bgr = new Mat();
-        Cv2.CvtColor(bgra, bgr, ColorConversionCodes.BGRA2BGR);
+        ImagePreprocessor.WithBgraMat(frame, bgra => Cv2.CvtColor(bgra, bgr, ColorConversionCodes.BGRA2BGR));
 
         var palmBoxMin = new Vector2(palm.Box.X1, palm.Box.Y1);
         var palmBoxMax = new Vector2(palm.Box.X2, palm.Box.Y2);

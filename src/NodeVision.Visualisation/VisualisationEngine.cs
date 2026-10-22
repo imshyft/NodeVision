@@ -123,10 +123,16 @@ namespace NodeVision.Visualisation
                     break;
 
                 case ExpandSceneEvent expand:
-                    if (HasViewport &&
-                        HitTestNode(ScreenToCanvas(expand.ScreenPosition, ViewportSize)) is { } expandId &&
-                        _graph.HasChildren(expandId))
+                    if (!HasViewport ||
+                        HitTestNode(ScreenToCanvas(expand.ScreenPosition, ViewportSize)) is not { } expandId)
+                        break;
+
+                    // Any node can be the target: parents expand and frame their branch, leaves simply
+                    // frame themselves (there are no children to reveal).
+                    if (_graph.HasChildren(expandId))
                         SetExpanded(expandId, true);
+                    else
+                        FocusOnNode(expandId);
                     break;
 
                 case CollapseSceneEvent collapse:

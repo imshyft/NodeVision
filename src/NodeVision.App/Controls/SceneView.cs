@@ -666,10 +666,10 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
                 if (strength <= 0.01f)
                     continue;
 
-                glow.Color = glowColour.WithAlpha((byte)(strength * 34f));
+                glow.Color = glowColour.WithAlpha((byte)(strength * 14f));
                 canvas.DrawLine(p0, p1, glow);
 
-                line.Color = lineColour.WithAlpha((byte)(strength * 130f));
+                line.Color = lineColour.WithAlpha((byte)(strength * 52f));
                 canvas.DrawLine(p0, p1, line);
             }
         }
@@ -681,7 +681,7 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
             if (strength <= 0.01f)
                 continue;
 
-            tip.Color = lineColour.WithAlpha((byte)(strength * 120f));
+            tip.Color = lineColour.WithAlpha((byte)(strength * 48f));
             canvas.DrawCircle(points[index], thinWidth * 0.9f, tip);
         }
     }

@@ -31,20 +31,24 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
         // Content is clipped to the card, so a long body or an image cannot spill past it.
         var clip = new ClipRect(position, size);
 
-        commands.Add(new RectangleRenderCommand
-        {
-            Colour = Fade(NodeStyle.Border, reveal),
-            Position = new Vector2(position.X - metrics, position.Y - metrics),
-            Size = new Vector2(size.X + metrics * 2f, size.Y + metrics * 2f),
-            CornerRadius = cornerRadius + metrics
-        });
-
+        // Fill first, then stroke the border on top. A filled border rectangle would sit behind the
+        // translucent background and make the whole card look opaque.
         commands.Add(new RectangleRenderCommand
         {
             Colour = Fade(NodeStyle.Background, reveal),
             Position = position,
             Size = size,
             CornerRadius = cornerRadius
+        });
+
+        commands.Add(new RectangleRenderCommand
+        {
+            Colour = Fade(NodeStyle.Border, reveal),
+            Position = position,
+            Size = size,
+            CornerRadius = cornerRadius,
+            IsStroke = true,
+            StrokeWidth = MathF.Max(1f, metrics)
         });
 
         commands.Add(new RectangleRenderCommand

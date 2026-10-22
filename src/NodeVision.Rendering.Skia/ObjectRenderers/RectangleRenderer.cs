@@ -12,7 +12,8 @@ public class RectangleRenderer : SkiaObjectRenderer
         using var paint = new SKPaint
         {
             Color = SkiaHelpers.ConvertColour(rectangleCommand.Colour),
-            Style = SKPaintStyle.Fill,
+            Style = rectangleCommand.IsStroke ? SKPaintStyle.Stroke : SKPaintStyle.Fill,
+            StrokeWidth = rectangleCommand.StrokeWidth,
             IsAntialias = true
         };
 

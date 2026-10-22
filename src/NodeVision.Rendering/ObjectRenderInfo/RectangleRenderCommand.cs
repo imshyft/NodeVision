@@ -8,5 +8,7 @@ namespace NodeVision.Rendering.ObjectRenderInfo
         public Vector2 Position { get; init; }
         public Vector2 Size { get; init; }
         public float CornerRadius { get; init; }
+        public bool IsStroke { get; init; }
+        public float StrokeWidth { get; init; } = 1f;
     }
 }

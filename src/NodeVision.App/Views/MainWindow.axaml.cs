@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -72,11 +73,24 @@ public partial class MainWindow : Window
     private long _expandHighlightUntilMs;
     private long _collapseHighlightUntilMs;
 
+    private long _capturedFrames;
+    private long _inferenceFrames;
+    private long _lastCapturedCount;
+    private long _lastInferenceCount;
+    private long _lastStatsTimestamp;
+    private float _renderFps;
+    private float _captureFps;
+    private float _inferenceFps;
+    private float _frameMs;
+    private bool _perfReady;
+
     public MainWindow()
     {
         InitializeComponent();
 
+        _perfReady = true;
         ConfigureGestureToolTips();
+        _lastStatsTimestamp = Stopwatch.GetTimestamp();
 
         _gestureToSceneMapper = new GestureToSceneMapper(
             normalized => SceneViewControl.FrameToScreen(normalized));
@@ -135,6 +149,14 @@ public partial class MainWindow : Window
         {
             if (_heldKeys.Add(e.Key))
                 ToggleGestureHelp();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F3)
+        {
+            if (_heldKeys.Add(e.Key))
+                TogglePerfOverlay();
             e.Handled = true;
             return;
         }
@@ -205,6 +227,8 @@ public partial class MainWindow : Window
         try
         {
             _inferenceEngine = new InferenceEngine(_webcamFrameBuffer);
+            _inferenceEngine.InferenceCompleted += OnInferenceCompletedForStats;
+            _inferenceEngine.Paused = !(PerfInferenceCheck.IsChecked ?? true);
             _handSource = new HandGestureSource(_inferenceEngine);
             _handSource.GestureAvailable += _gestureEvents.Enqueue;
             _handSource.Start();
@@ -225,6 +249,79 @@ public partial class MainWindow : Window
 
         if (_helpVisible)
             GestureHelpText.Text = BuildGestureHelpText();
+    }
+
+    private void TogglePerfOverlay()
+    {
+        PerfOverlay.IsVisible = !PerfOverlay.IsVisible;
+        if (PerfOverlay.IsVisible)
+            ApplyPerfToggles();
+    }
+
+    private void OnPerfTogglesChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_perfReady)
+            ApplyPerfToggles();
+    }
+
+    /// <summary>
+    /// Applies the F3 checkboxes so individual subsystems can be turned off while watching the
+    /// rates above them.
+    /// </summary>
+    private void ApplyPerfToggles()
+    {
+        if (!_perfReady)
+            return;
+
+        SceneViewControl.DrawWebcam = PerfWebcamCheck.IsChecked ?? true;
+        SceneViewControl.DrawScene = PerfSceneCheck.IsChecked ?? true;
+        SceneViewControl.DrawInteraction = PerfInteractionCheck.IsChecked ?? true;
+
+        if (_inferenceEngine is not null)
+            _inferenceEngine.Paused = !(PerfInferenceCheck.IsChecked ?? true);
+
+        _handDebugEnabled = PerfDebugCheck.IsChecked ?? false;
+        HandDebugOverlay.IsVisible = _handDebugEnabled;
+        SceneViewControl.DebugOverlayEnabled = _handDebugEnabled;
+        if (!_handDebugEnabled)
+            SceneViewControl.HandDebug = null;
+
+        SceneViewControl.InvalidateVisual();
+    }
+
+    private void UpdatePerfStats(float deltaTime)
+    {
+        if (deltaTime > 0f)
+        {
+            var instantFps = 1f / deltaTime;
+            var instantMs = deltaTime * 1000f;
+            _renderFps = _renderFps <= 0f ? instantFps : _renderFps * 0.9f + instantFps * 0.1f;
+            _frameMs = _frameMs <= 0f ? instantMs : _frameMs * 0.9f + instantMs * 0.1f;
+        }
+
+        var now = Stopwatch.GetTimestamp();
+        var elapsed = Stopwatch.GetElapsedTime(_lastStatsTimestamp, now).TotalSeconds;
+
+        if (elapsed >= 0.5)
+        {
+            var captured = Interlocked.Read(ref _capturedFrames);
+            var inferred = Interlocked.Read(ref _inferenceFrames);
+
+            _captureFps = (float)((captured - _lastCapturedCount) / elapsed);
+            _inferenceFps = (float)((inferred - _lastInferenceCount) / elapsed);
+            _lastCapturedCount = captured;
+            _lastInferenceCount = inferred;
+            _lastStatsTimestamp = now;
+        }
+
+        if (!PerfOverlay.IsVisible)
+            return;
+
+        var engine = _inferenceEngine;
+        PerfText.Text =
+            $"render   {_renderFps,5:0.0} fps   {_frameMs,5:0.0} ms\n" +
+            $"capture  {_captureFps,5:0.0} fps\n" +
+            $"detect   {_inferenceFps,5:0.0} fps   palm {engine?.PalmMs ?? 0,5:0.0} ms   hand {engine?.LandmarkMs ?? 0,5:0.0} ms   total {engine?.TotalMs ?? 0,5:0.0} ms";
     }
 
     private static string BuildGestureHelpText()
@@ -661,6 +758,7 @@ public partial class MainWindow : Window
 
             UpdatePanInertia(Math.Min(deltaTime, 0.1f), now.TotalSeconds);
             UpdateInteractionOverlay(Math.Min(deltaTime, 0.1f));
+            UpdatePerfStats(Math.Min(deltaTime, 0.1f));
 
             SceneViewControl.CameraTranslation =
                 _visualizationEngine.CameraPosition;
@@ -1079,6 +1177,7 @@ public partial class MainWindow : Window
     {
         _handDebugEnabled = !_handDebugEnabled;
         HandDebugOverlay.IsVisible = _handDebugEnabled;
+        PerfDebugCheck.IsChecked = _handDebugEnabled;
 
         if (!_handDebugEnabled)
         {
@@ -1241,7 +1340,12 @@ public partial class MainWindow : Window
     private void OnWebcamFrameCaptured(WebcamFrame frame)
     {
         // Runs on the webcam capture thread.
-        // Frame data is already being placed into the ring buffer.
+        Interlocked.Increment(ref _capturedFrames);
+    }
+
+    private void OnInferenceCompletedForStats(InferenceResult result)
+    {
+        Interlocked.Increment(ref _inferenceFrames);
     }
 
     private void OnWebcamStarted()

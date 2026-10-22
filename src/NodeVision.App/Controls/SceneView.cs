@@ -64,6 +64,15 @@ public class SceneView : Control, ICustomHitTest
     /// <summary>Mirrors the webcam image horizontally, like a selfie view.</summary>
     public bool MirrorWebcam { get; set; }
 
+    /// <summary>Perf toggle: draw the webcam background.</summary>
+    public bool DrawWebcam { get; set; } = true;
+
+    /// <summary>Perf toggle: draw the scene command list.</summary>
+    public bool DrawScene { get; set; } = true;
+
+    /// <summary>Perf toggle: draw the interaction overlay (cursor, hover, hand ghost, pulses).</summary>
+    public bool DrawInteraction { get; set; } = true;
+
     public Vector2 ViewportSize => new Vector2((float)Bounds.Width, (float)Bounds.Height);
 
     /// <summary>
@@ -190,9 +199,10 @@ public class SceneView : Control, ICustomHitTest
     {
         base.Render(context);
 
-        DrawWebcamBackground(context);
+        if (DrawWebcam)
+            DrawWebcamBackground(context);
 
-        if (Scene != null)
+        if (DrawScene && Scene != null)
         {
             var renderContext = new RenderContext
             {
@@ -211,7 +221,7 @@ public class SceneView : Control, ICustomHitTest
                     renderContext));
         }
 
-        if (Interaction is { } interaction)
+        if (DrawInteraction && Interaction is { } interaction)
         {
             context.Custom(
                 new InteractionDrawOperation(

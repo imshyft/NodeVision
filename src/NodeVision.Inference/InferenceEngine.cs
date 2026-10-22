@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,18 @@ public sealed class InferenceEngine : IDisposable
 
     public event Action<InferenceResult>? InferenceCompleted;
     public event Action<Exception>? Error;
+
+    /// <summary>When true the inference loop idles, so capture/render can be measured alone.</summary>
+    public bool Paused { get; set; }
+
+    /// <summary>Last frame's palm-detection time in milliseconds (perf diagnostics).</summary>
+    public double PalmMs { get; private set; }
+
+    /// <summary>Last frame's landmark-detection time in milliseconds (perf diagnostics).</summary>
+    public double LandmarkMs { get; private set; }
+
+    /// <summary>Last frame's total detection time in milliseconds (perf diagnostics).</summary>
+    public double TotalMs { get; private set; }
 
     public InferenceEngine(WebcamFrameRingBuffer ringBuffer)
         : this(ringBuffer, Path.Combine(AppContext.BaseDirectory, "Models"))
@@ -69,6 +82,12 @@ public sealed class InferenceEngine : IDisposable
         {
             try
             {
+                if (Paused)
+                {
+                    await Task.Delay(50, _cts.Token).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (_ringBuffer.TryRead(_consumerId, out var frame))
                 {
                     // Process frame
@@ -110,11 +129,19 @@ public sealed class InferenceEngine : IDisposable
         var presence = 0f;
         var handedness = 0f;
 
+        var start = Stopwatch.GetTimestamp();
+
         var palmDetection = _palmDetector.Detect(frame);
+        var afterPalm = Stopwatch.GetTimestamp();
+        PalmMs = Stopwatch.GetElapsedTime(start, afterPalm).TotalMilliseconds;
+
         if (palmDetection is { } detectedPalm)
         {
             palm = detectedPalm;
             var hand = _handLandmarkDetector.Detect(frame, detectedPalm);
+            var afterLandmark = Stopwatch.GetTimestamp();
+            LandmarkMs = Stopwatch.GetElapsedTime(afterPalm, afterLandmark).TotalMilliseconds;
+
             if (hand is { } handResult)
             {
                 handLandmarks = handResult.Landmarks;
@@ -122,6 +149,12 @@ public sealed class InferenceEngine : IDisposable
                 handedness = handResult.HandednessScore;
             }
         }
+        else
+        {
+            LandmarkMs = 0;
+        }
+
+        TotalMs = Stopwatch.GetElapsedTime(start, Stopwatch.GetTimestamp()).TotalMilliseconds;
 
         var result = new InferenceResult(
             Timestamp: frame.Timestamp,

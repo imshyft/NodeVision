@@ -267,5 +267,51 @@
             </StackPanel>
         </Border>
 
+        <!-- Performance profiler (F3): live rates, stage timings and subsystem toggles -->
+        <Border x:Name="PerfOverlay"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="120,0,0,12"
+                Padding="12"
+                CornerRadius="8"
+                Background="#E60B1016"
+                IsVisible="False">
+            <StackPanel Spacing="6">
+                <TextBlock Text="Performance (F3)"
+                           Foreground="White"
+                           FontWeight="SemiBold"
+                           FontSize="13"/>
+                <TextBlock x:Name="PerfText"
+                           Foreground="#B8C6D6"
+                           FontFamily="Consolas"
+                           FontSize="12"/>
+                <CheckBox x:Name="PerfWebcamCheck"
+                          Content="Webcam background"
+                          IsChecked="True"
+                          Foreground="#DDE6F2"
+                          IsCheckedChanged="OnPerfTogglesChanged"/>
+                <CheckBox x:Name="PerfSceneCheck"
+                          Content="Scene"
+                          IsChecked="True"
+                          Foreground="#DDE6F2"
+                          IsCheckedChanged="OnPerfTogglesChanged"/>
+                <CheckBox x:Name="PerfInteractionCheck"
+                          Content="Interaction overlay"
+                          IsChecked="True"
+                          Foreground="#DDE6F2"
+                          IsCheckedChanged="OnPerfTogglesChanged"/>
+                <CheckBox x:Name="PerfInferenceCheck"
+                          Content="Hand tracking"
+                          IsChecked="True"
+                          Foreground="#DDE6F2"
+                          IsCheckedChanged="OnPerfTogglesChanged"/>
+                <CheckBox x:Name="PerfDebugCheck"
+                          Content="Hand debug"
+                          IsChecked="False"
+                          Foreground="#DDE6F2"
+                          IsCheckedChanged="OnPerfTogglesChanged"/>
+            </StackPanel>
+        </Border>
+
     </Grid>
 </Window>

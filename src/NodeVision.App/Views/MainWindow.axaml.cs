@@ -50,6 +50,7 @@ public partial class MainWindow : Window
 
     private bool _helpVisible;
     private const float PanKeyStep = 80f;
+    private const float ConnectionHitRadiusPixels = 26f;
 
     private const float PulseLifetimeSeconds = 0.55f;
     private readonly List<ActivePulse> _interactionPulses = new();
@@ -684,9 +685,16 @@ public partial class MainWindow : Window
         {
             case GestureKind.OpenHand:
                 _expandHighlightUntilMs = Environment.TickCount64 + GestureHighlightMs;
-                if (TryGetExpandableNode(gesture.Position, out var expandId, out var expandCentre) &&
-                    !_visualizationEngine.IsExpanded(expandId))
-                    AddPulseAt(expandCentre, InteractionPulseKind.Expand);
+                if (TryGetExpandableNode(gesture.Position, out var expandId, out var expandCentre))
+                {
+                    if (!_visualizationEngine.IsExpanded(expandId))
+                        AddPulseAt(expandCentre, InteractionPulseKind.Expand);
+                }
+                else
+                {
+                    // Aiming the expand gesture at a connection focuses the child it leads to.
+                    TryFocusChildUnderConnection(gesture.Position);
+                }
                 break;
 
             case GestureKind.Fist:
@@ -721,6 +729,111 @@ public partial class MainWindow : Window
             screenCentre = (min + max) * 0.5f;
 
         return true;
+    }
+
+    /// <summary>
+    /// When the expand gesture is aimed at a connection rather than a node, focus the child node the
+    /// connection leads to. Returns false when the point is over a node or not close to any line.
+    /// </summary>
+    private bool TryFocusChildUnderConnection(Vector2 normalizedPosition)
+    {
+        var viewport = SceneViewControl.ViewportSize;
+        if (viewport.X <= 0f || viewport.Y <= 0f)
+            return false;
+
+        var screen = SceneViewControl.FrameToScreen(normalizedPosition);
+        var canvas = _visualizationEngine.ScreenToCanvas(screen, viewport);
+
+        // A node under the point takes priority; line focus is only the fallback.
+        if (_visualizationEngine.HitTestNode(canvas) is not null)
+            return false;
+
+        Connection? best = null;
+        var bestDistance = ConnectionHitRadiusPixels;
+
+        foreach (var sceneObject in _visualizationEngine.Scene.Objects)
+        {
+            if (sceneObject is not Connection connection ||
+                connection.ParentNode is not { } parent ||
+                connection.ChildNode is not { } child)
+                continue;
+
+            if (parent.Reveal <= 0.01f || child.Reveal <= 0.01f)
+                continue;
+
+            var distance = DistanceToConnection(screen, parent, child, viewport);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = connection;
+            }
+        }
+
+        if (best?.ChildNode is not { } target)
+            return false;
+
+        _visualizationEngine.FocusOnNode(target.Id);
+        return true;
+    }
+
+    private float DistanceToConnection(Vector2 screenPoint, Node parent, Node child, Vector2 viewport)
+    {
+        var startCanvas = parent.Position + parent.Size * 0.5f;
+        var endCanvas = child.Position + child.Size * 0.5f;
+        var delta = endCanvas - startCanvas;
+        var length = delta.Length;
+        if (length < 1f)
+            return float.MaxValue;
+
+        // Mirrors ConnectionDrawCommandBuilder so the hit test follows the drawn curve.
+        var perpendicular = new Vector2(-delta.Y / length, delta.X / length);
+        var bow = MathF.Min(70f, length * 0.18f);
+        var control1Canvas = startCanvas + delta * 0.33f + perpendicular * bow;
+        var control2Canvas = startCanvas + delta * 0.67f + perpendicular * bow;
+
+        var start = _visualizationEngine.CanvasToScreen(startCanvas, viewport);
+        var end = _visualizationEngine.CanvasToScreen(endCanvas, viewport);
+        var control1 = _visualizationEngine.CanvasToScreen(control1Canvas, viewport);
+        var control2 = _visualizationEngine.CanvasToScreen(control2Canvas, viewport);
+
+        const int steps = 24;
+        var minimum = float.MaxValue;
+        var previous = start;
+
+        for (var i = 1; i <= steps; i++)
+        {
+            var point = CubicBezier(start, control1, control2, end, i / (float)steps);
+            minimum = MathF.Min(minimum, DistanceToSegment(screenPoint, previous, point));
+            previous = point;
+        }
+
+        return minimum;
+    }
+
+    private static Vector2 CubicBezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+    {
+        var inverse = 1f - t;
+        return p0 * (inverse * inverse * inverse) +
+               p1 * (3f * inverse * inverse * t) +
+               p2 * (3f * inverse * t * t) +
+               p3 * (t * t * t);
+    }
+
+    private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
+    {
+        var abX = b.X - a.X;
+        var abY = b.Y - a.Y;
+        var lengthSquared = abX * abX + abY * abY;
+        if (lengthSquared < 1e-6f)
+            return (point - a).Length;
+
+        var t = Math.Clamp(
+            ((point.X - a.X) * abX + (point.Y - a.Y) * abY) / lengthSquared,
+            0f,
+            1f);
+
+        var closest = new Vector2(a.X + abX * t, a.Y + abY * t);
+        return (point - closest).Length;
     }
 
     private void AddPulse(Vector2 normalizedPosition, InteractionPulseKind kind)

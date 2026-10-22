@@ -96,7 +96,7 @@ public partial class MainWindow : Window
                 return;
 
             var wasExpanded = _visualizationEngine.IsExpanded(nodeId);
-            _visualizationEngine.ToggleExpanded(nodeId);
+            _visualizationEngine.SetExpanded(nodeId, !wasExpanded);
 
             if (_visualizationEngine.TryGetNodeScreenBounds(nodeId, viewport, out var min, out var max))
                 AddPulseAt((min + max) * 0.5f, wasExpanded ? InteractionPulseKind.Collapse : InteractionPulseKind.Expand);
@@ -826,7 +826,13 @@ public partial class MainWindow : Window
             connection?.ChildNode is not { } target)
             return false;
 
-        _visualizationEngine.FocusOnNode(target.Id);
+        // Aiming expand at a link means "open what this link leads to": if the child has its own
+        // children, open and frame them rather than only focusing the child card.
+        if (_visualizationEngine.CanExpand(target.Id))
+            _visualizationEngine.SetExpanded(target.Id, true);
+        else
+            _visualizationEngine.FocusOnNode(target.Id);
+
         return true;
     }
 

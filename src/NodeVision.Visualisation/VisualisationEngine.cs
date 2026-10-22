@@ -257,7 +257,7 @@ namespace NodeVision.Visualisation
         /// <summary>
         /// Expands or collapses a node, animating its children out of it or back into it.
         /// </summary>
-        public void ToggleExpanded(int nodeId) => Expansion.ToggleExpanded(nodeId);
+        public void ToggleExpanded(int nodeId) => SetExpanded(nodeId, !Expansion.IsExpanded(nodeId));
 
         /// <summary>
         /// Expands or collapses a node explicitly. Unlike <see cref="ToggleExpanded"/> this is idempotent,
@@ -270,9 +270,49 @@ namespace NodeVision.Visualisation
 
             Expansion.SetExpanded(nodeId, expanded);
 
-            // Expanding should bring the node into view; collapsing leaves the camera where it is.
+            // Expanding should bring the whole branch into view - the card and the children it just
+            // revealed - otherwise a gesture expand zooms onto the parent and leaves the new layer
+            // off-screen. Collapsing leaves the camera where it is.
             if (expanded)
-                FocusOnNode(nodeId);
+                FocusOnExpandedSubtree(nodeId);
+        }
+
+        /// <summary>
+        /// Frames the expanded node and every descendant that will be visible once the reveal settles:
+        /// direct children always, grandchildren only where their own parent was already expanded.
+        /// </summary>
+        private void FocusOnExpandedSubtree(int nodeId)
+        {
+            if (!_graph.TryGetNode(nodeId, out var node))
+                return;
+
+            var min = _graph.AuthoredPosition(nodeId);
+            var max = min + node.Size;
+            var visited = new HashSet<int> { nodeId };
+
+            IncludeVisibleDescendants(nodeId, ref min, ref max, visited);
+
+            StartCameraAnimation((min + max) * 0.5f, FitZoomFor(max - min));
+        }
+
+        private void IncludeVisibleDescendants(int parentId, ref Vector2 min, ref Vector2 max, HashSet<int> visited)
+        {
+            if (!Expansion.IsExpanded(parentId))
+                return;
+
+            foreach (var childId in _graph.ChildrenOf(parentId))
+            {
+                if (!_graph.TryGetNode(childId, out var child) || !visited.Add(childId))
+                    continue;
+
+                var position = _graph.AuthoredPosition(childId);
+                min = new Vector2(MathF.Min(min.X, position.X), MathF.Min(min.Y, position.Y));
+                max = new Vector2(
+                    MathF.Max(max.X, position.X + child.Size.X),
+                    MathF.Max(max.Y, position.Y + child.Size.Y));
+
+                IncludeVisibleDescendants(childId, ref min, ref max, visited);
+            }
         }
 
         /// <summary>

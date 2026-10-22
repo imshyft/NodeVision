@@ -13,7 +13,8 @@ public sealed record AppSettings(
     string? CameraDisplayName,
     int? CameraDeviceIndex,
     CameraMode? CameraMode,
-    string? ProjectPath);
+    string? ProjectPath,
+    bool MirrorCamera = false);
 
 public static class AppSettingsStore
 {

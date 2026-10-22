@@ -417,6 +417,13 @@ public partial class MainWindow : Window
     {
         SceneViewControl.MirrorWebcam = !SceneViewControl.MirrorWebcam;
         SceneViewControl.InvalidateVisual();
+
+        // Persist the flip immediately, paired with the camera currently in use.
+        if (CameraDeviceComboBox.SelectedItem is CameraDeviceOption camera)
+        {
+            var mode = CameraModeComboBox.SelectedItem as CameraMode ?? camera.DefaultMode;
+            SaveCurrentSettings(camera, mode);
+        }
     }
 
     private void LoadAvailableCameras()
@@ -463,6 +470,9 @@ public partial class MainWindow : Window
         CameraDeviceComboBox.SelectedItem = camera;
         PopulateCameraModes(camera);
         ApplySavedMode(settings, camera);
+
+        // Remembered with the camera, so the same device comes back mirrored (or not).
+        SceneViewControl.MirrorWebcam = settings.MirrorCamera;
     }
 
     private CameraDeviceOption? FindSavedCamera(AppSettings settings)
@@ -503,7 +513,8 @@ public partial class MainWindow : Window
             camera.DisplayName,
             camera.DeviceIndex,
             mode,
-            _selectedSaveFilePath));
+            _selectedSaveFilePath,
+            SceneViewControl.MirrorWebcam));
     }
 
     private void OnCameraSelectionChanged(

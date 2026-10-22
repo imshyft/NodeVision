@@ -176,9 +176,10 @@ public sealed class GestureProcessor
     public bool IsPinching => _isPinching;
 
     /// <summary>
-    /// True on frames where the hand is making the pan "grab": index extended, ring and pinky curled
-    /// into the palm, and the middle fingertip touching the thumb. Evaluated every frame with no
-    /// confirmation delay, so separating the middle finger from the thumb ends the pan immediately.
+    /// True on frames where the hand is making the pan "grab": the index extended and pointing up,
+    /// the other fingers curled into the palm, and the middle fingertip touching the thumb.
+    /// Evaluated every frame with no confirmation delay, so separating the middle finger from the
+    /// thumb ends the pan immediately.
     /// </summary>
     public bool IsPanActive { get; private set; }
 
@@ -265,6 +266,7 @@ public sealed class GestureProcessor
         // Pan yields to pinch so a zoom grab can never also drag the canvas.
         IsPanActive = !_isPinching &&
                       diagnosticsSoFar.IndexExtended &&
+                      diagnosticsSoFar.IndexPointingUp &&
                       diagnosticsSoFar.MiddleFolded &&
                       diagnosticsSoFar.RingFolded &&
                       diagnosticsSoFar.PinkyFolded &&

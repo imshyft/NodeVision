@@ -38,11 +38,20 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
     // the gain lets a small hand movement carry the scene much further. Starting guess - tune.
     private const float PanGain = 3f;
 
+    // Pan deltas are averaged over this many gesture frames before they are applied, which smooths
+    // out frame-to-frame jitter without changing where the pan ends up.
+    private const int PanSmoothingFrames = 4;
+
     private readonly Func<Vector2, Vector2> _toScreen;
 
     private bool _twistActive;
     private float _lastRoll;
-    private Vector2? _lastPointPosition;
+    private Vector2? _lastRawPointPosition;
+
+    private readonly Vector2[] _panDeltaWindow = new Vector2[PanSmoothingFrames];
+    private int _panWindowCount;
+    private int _panWindowIndex;
+    private Vector2 _panDeltaSum;
 
     /// <param name="toScreen">Maps a camera-normalised point (0..1) to screen pixels.</param>
     public GestureToSceneMapper(Func<Vector2, Vector2> toScreen)
@@ -103,22 +112,43 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
     {
         if (gesture.Phase == GesturePhase.Ended)
         {
-            _lastPointPosition = null;
+            _lastRawPointPosition = null;
+            ClearPanWindow();
             return NoEvents;
         }
 
-        if (gesture.Phase == GesturePhase.Started || _lastPointPosition is null)
+        if (gesture.Phase == GesturePhase.Started || _lastRawPointPosition is null)
         {
-            _lastPointPosition = gesture.Position;
+            _lastRawPointPosition = gesture.Position;
+            ClearPanWindow();
             return NoEvents;
         }
 
-        var previous = _lastPointPosition.Value;
-        _lastPointPosition = gesture.Position;
+        var previous = _lastRawPointPosition.Value;
+        _lastRawPointPosition = gesture.Position;
 
         // Measure the move in screen pixels so it matches the visible hand, including the webcam's
         // aspect-fit crop and mirroring.
-        var screenDelta = (_toScreen(gesture.Position) - _toScreen(previous)) * PanGain;
+        var rawDelta = _toScreen(gesture.Position) - _toScreen(previous);
+
+        // Average the last few deltas: the total distance still adds up, but frame-to-frame
+        // variation is softened so the canvas glides rather than judders.
+        if (_panWindowCount < PanSmoothingFrames)
+        {
+            _panDeltaWindow[_panWindowIndex] = rawDelta;
+            _panDeltaSum += rawDelta;
+            _panWindowCount++;
+        }
+        else
+        {
+            _panDeltaSum -= _panDeltaWindow[_panWindowIndex];
+            _panDeltaWindow[_panWindowIndex] = rawDelta;
+            _panDeltaSum += rawDelta;
+        }
+
+        _panWindowIndex = (_panWindowIndex + 1) % PanSmoothingFrames;
+
+        var screenDelta = (_panDeltaSum / _panWindowCount) * PanGain;
 
         if (screenDelta.LengthSquared < 0.01f)
             return NoEvents;
@@ -131,5 +161,13 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
         return _toScreen(new Vector2(
             Math.Clamp(normalizedPosition.X, 0f, 1f),
             Math.Clamp(normalizedPosition.Y, 0f, 1f)));
+    }
+
+    private void ClearPanWindow()
+    {
+        Array.Clear(_panDeltaWindow, 0, _panDeltaWindow.Length);
+        _panWindowCount = 0;
+        _panWindowIndex = 0;
+        _panDeltaSum = default;
     }
 }

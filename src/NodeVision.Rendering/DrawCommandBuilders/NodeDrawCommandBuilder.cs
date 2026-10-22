@@ -6,6 +6,12 @@ namespace NodeVision.Rendering.DrawCommandBuilders;
 
 public class NodeDrawCommandBuilder : DrawCommandBuilder
 {
+    // Minimum on-screen title size so a zoomed-out overview stays readable. Roots get the largest
+    // floor and each level steps down, so the hierarchy is still visible at the clamp.
+    private const float RootTitleScreenPx = 18f;
+    private const float TitleScreenStepPx = 2.5f;
+    private const float MinTitleScreenPx = 10f;
+
     public override void BuildCommand(SceneObject sceneObject, List<RenderCommand> commands, RenderContext context)
     {
         var node = (Node)sceneObject;
@@ -33,6 +39,13 @@ public class NodeDrawCommandBuilder : DrawCommandBuilder
         var headerSize = NodeStyle.HeaderSize * metrics * titleScale;
         var headerGap = NodeStyle.HeaderGap * metrics;
         var bodySize = NodeStyle.BodySize * metrics;
+
+        // Enforce a depth-dependent on-screen minimum. Applying it in screen space (then converting
+        // back to canvas units) keeps titles legible without flattening every level to one size.
+        var zoom = MathF.Max(context.CameraZoom, 0.01f);
+        var depth = Math.Max(0, node.Depth);
+        var minScreenSize = MathF.Max(MinTitleScreenPx, RootTitleScreenPx - depth * TitleScreenStepPx);
+        headerSize = MathF.Max(headerSize, minScreenSize / zoom);
 
         // Content is clipped to the card, so a long body or an image cannot spill past it.
         var clip = new ClipRect(position, size);

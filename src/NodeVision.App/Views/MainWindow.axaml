@@ -19,6 +19,30 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
+    <Window.Styles>
+        <Style Selector="Border.gestureItem">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8,10"/>
+            <Setter Property="Background" Value="#121922"/>
+            <Setter Property="BorderBrush" Value="#1E2A36"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="Border.gestureItem TextBlock">
+            <Setter Property="Foreground" Value="#AAB6C4"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Border.gestureItem Path">
+            <Setter Property="Stroke" Value="#AAB6C4"/>
+            <Setter Property="Fill" Value="Transparent"/>
+            <Setter Property="StrokeThickness" Value="1.6"/>
+            <Setter Property="Width" Value="22"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+    </Window.Styles>
+
     <Grid>
 
         <!-- Gray placeholder shown before a camera is selected -->
@@ -30,6 +54,64 @@
         <controls:SceneView
             x:Name="SceneViewControl"
             IsVisible="False"/>
+
+        <!-- Gesture sidebar, shown once the presentation view is active -->
+        <Border x:Name="GestureSidebar"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Stretch"
+                Width="108"
+                Background="#D90B1016"
+                BorderBrush="#22303F"
+                BorderThickness="0,0,1,0"
+                IsVisible="False">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Row="0"
+                           Text="GESTURES"
+                           Foreground="#7F8FA3"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           Margin="0,18,0,12"/>
+
+                <StackPanel Grid.Row="1" Spacing="8" Margin="10,0">
+                    <Border x:Name="GesturePanItem" Classes="gestureItem">
+                        <StackPanel Spacing="4">
+                            <Path Data="M12,3 L12,21 M3,12 L21,12 M12,3 L9,6 M12,3 L15,6 M12,21 L9,18 M12,21 L15,18 M3,12 L6,9 M3,12 L6,15 M21,12 L18,9 M21,12 L18,15"/>
+                            <TextBlock Text="Pan"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GestureZoomItem" Classes="gestureItem">
+                        <StackPanel Spacing="4">
+                            <Path Data="M10,4 A6,6 0 1 0 10,16 A6,6 0 1 0 10,4 M14.5,14.5 L20,20"/>
+                            <TextBlock Text="Zoom"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GestureExpandItem" Classes="gestureItem">
+                        <StackPanel Spacing="4">
+                            <Path Data="M4,9 L9,9 L9,4 M20,9 L15,9 L15,4 M20,15 L15,15 L15,20 M4,15 L9,15 L9,20"/>
+                            <TextBlock Text="Expand"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="GestureCollapseItem" Classes="gestureItem">
+                        <StackPanel Spacing="4">
+                            <Path Data="M9,4 L9,9 L4,9 M15,4 L15,9 L20,9 M15,20 L15,15 L20,15 M9,20 L9,15 L4,15"/>
+                            <TextBlock Text="Collapse"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <Button Grid.Row="2"
+                        x:Name="FlipCameraButton"
+                        Content="Flip camera"
+                        Margin="10,0,10,16"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Click="OnFlipCameraClick"/>
+            </Grid>
+        </Border>
 
         <!-- Camera selection overlay -->
         <Border x:Name="CameraSelectionOverlay"
@@ -124,7 +206,7 @@
         <Border x:Name="DebugGestureOverlay"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
-                Margin="12"
+                Margin="120,12,0,0"
                 Padding="10,8"
                 CornerRadius="6"
                 Background="#CC000000">

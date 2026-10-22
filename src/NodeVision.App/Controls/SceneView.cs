@@ -61,7 +61,51 @@ public class SceneView : Control, ICustomHitTest
     /// <summary>Always-on interaction feedback (cursor, hover target, expand/collapse pulses).</summary>
     public InteractionOverlay? Interaction { get; set; }
 
+    /// <summary>Mirrors the webcam image horizontally, like a selfie view.</summary>
+    public bool MirrorWebcam { get; set; }
+
     public Vector2 ViewportSize => new Vector2((float)Bounds.Width, (float)Bounds.Height);
+
+    /// <summary>
+    /// Maps a camera-normalised point (0..1) to viewport pixels, respecting the webcam's aspect-fit
+    /// crop and mirroring. Interaction overlays and gesture focal points use this so they line up
+    /// with the visible video.
+    /// </summary>
+    public Vector2 FrameToScreen(Vector2 normalized)
+    {
+        var rect = GetFrameDisplayRect();
+        var x = MirrorWebcam ? 1f - normalized.X : normalized.X;
+        return new Vector2(
+            (float)(rect.X + x * rect.Width),
+            (float)(rect.Y + normalized.Y * rect.Height));
+    }
+
+    /// <summary>
+    /// The on-screen rectangle the webcam image occupies. The image is scaled to cover the viewport
+    /// (preserving aspect ratio) and centred, so it can extend past the edges.
+    /// </summary>
+    public Rect GetFrameDisplayRect()
+    {
+        var bounds = new Rect(0, 0, Bounds.Width, Bounds.Height);
+
+        WebcamFrame? frame;
+        lock (_frameLock)
+            frame = _latestFrame;
+
+        if (frame is not { } current || current.Width <= 0 || current.Height <= 0 ||
+            bounds.Width <= 0 || bounds.Height <= 0)
+            return bounds;
+
+        var scale = Math.Max(bounds.Width / current.Width, bounds.Height / current.Height);
+        var width = current.Width * scale;
+        var height = current.Height * scale;
+
+        return new Rect(
+            (bounds.Width - width) / 2.0,
+            (bounds.Height - height) / 2.0,
+            width,
+            height);
+    }
 
     // A control whose only content is custom draw operations is not hit tested unless it opts in,
     // so without this no pointer event ever reaches the control.
@@ -197,7 +241,7 @@ public class SceneView : Control, ICustomHitTest
         }
 
         var rect = new Rect(0, 0, Bounds.Width, Bounds.Height);
-        context.Custom(new WebcamDrawOperation(rect, frame));
+        context.Custom(new WebcamDrawOperation(rect, frame, MirrorWebcam));
     }
 }
 
@@ -207,11 +251,13 @@ internal sealed class WebcamDrawOperation : ICustomDrawOperation
 
     private readonly WebcamFrame _frame;
     private readonly Rect _bounds;
+    private readonly bool _mirror;
 
-    public WebcamDrawOperation(Rect bounds, WebcamFrame frame)
+    public WebcamDrawOperation(Rect bounds, WebcamFrame frame, bool mirror)
     {
         _bounds = bounds;
         _frame = frame;
+        _mirror = mirror;
     }
 
     public Rect Bounds => _bounds;
@@ -239,13 +285,27 @@ internal sealed class WebcamDrawOperation : ICustomDrawOperation
 
         using (context.PushClip(_bounds))
         {
+            // Preserve the camera's aspect ratio: scale to cover the viewport and centre-crop.
+            var scale = Math.Max(_bounds.Width / _frame.Width, _bounds.Height / _frame.Height);
+            var width = _frame.Width * scale;
+            var height = _frame.Height * scale;
+
             var dstRect = new SKRect(
-                (float)_bounds.X,
-                (float)_bounds.Y,
-                (float)_bounds.Right,
-                (float)_bounds.Bottom);
+                (float)(_bounds.X + (_bounds.Width - width) / 2.0),
+                (float)(_bounds.Y + (_bounds.Height - height) / 2.0),
+                (float)(_bounds.X + (_bounds.Width + width) / 2.0),
+                (float)(_bounds.Y + (_bounds.Height + height) / 2.0));
+
+            if (_mirror)
+            {
+                canvas.Save();
+                canvas.Scale(-1f, 1f, (float)(_bounds.X + _bounds.Width / 2.0), 0f);
+            }
 
             canvas.DrawImage(image, dstRect, Sampling);
+
+            if (_mirror)
+                canvas.Restore();
         }
     }
 }
@@ -356,9 +416,8 @@ internal sealed class HandDebugDrawOperation : ICustomDrawOperation
         }
     }
 
-    private SKPoint Map(Vector2 normalized) => new(
-        (float)(_bounds.X + normalized.X * _bounds.Width),
-        (float)(_bounds.Y + normalized.Y * _bounds.Height));
+    // Positions handed to the draw operations are already in viewport pixels.
+    private static SKPoint Map(Vector2 screen) => new(screen.X, screen.Y);
 
     private void DrawPalm(SKCanvas canvas)
     {
@@ -653,9 +712,8 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
         return best;
     }
 
-    private SKPoint Map(Vector2 normalized) => new(
-        (float)(_bounds.X + normalized.X * _bounds.Width),
-        (float)(_bounds.Y + normalized.Y * _bounds.Height));
+    // Positions handed to the draw operations are already in viewport pixels.
+    private static SKPoint Map(Vector2 screen) => new(screen.X, screen.Y);
 
     private static float Distance(SKPoint a, SKPoint b)
     {

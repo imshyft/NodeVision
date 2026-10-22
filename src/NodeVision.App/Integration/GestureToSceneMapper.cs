@@ -18,8 +18,8 @@ public interface IGestureToSceneMapper
 /// Converts camera-normalised gesture readings into the viewport-pixel events the engine expects.
 /// State is retained only for continuous gestures: a pinch's hand rotation becomes a relative zoom
 /// and point movement becomes a pan delta. Open-hand and fist are edge-triggered expand and collapse
-/// requests. The engine owns the camera and converts screen positions to canvas itself, so this only
-/// scales normalised positions by the viewport.
+/// requests. A supplied transform maps camera coordinates to screen pixels, so the mapping follows
+/// the webcam's aspect-fit crop and mirroring.
 /// </summary>
 public sealed class GestureToSceneMapper : IGestureToSceneMapper
 {
@@ -38,16 +38,16 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
     // the gain lets a small hand movement carry the scene much further. Starting guess - tune.
     private const float PanGain = 3f;
 
-    private readonly Func<Vector2> _viewportSize;
+    private readonly Func<Vector2, Vector2> _toScreen;
 
     private bool _twistActive;
     private float _lastRoll;
     private Vector2? _lastPointPosition;
 
-    /// <param name="viewportSize">Returns the current scene viewport in screen pixels.</param>
-    public GestureToSceneMapper(Func<Vector2> viewportSize)
+    /// <param name="toScreen">Maps a camera-normalised point (0..1) to screen pixels.</param>
+    public GestureToSceneMapper(Func<Vector2, Vector2> toScreen)
     {
-        _viewportSize = viewportSize ?? throw new ArgumentNullException(nameof(viewportSize));
+        _toScreen = toScreen ?? throw new ArgumentNullException(nameof(toScreen));
     }
 
     public IReadOnlyList<SceneEvent> Map(GestureEvent gesture)
@@ -116,13 +116,9 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
         var previous = _lastPointPosition.Value;
         _lastPointPosition = gesture.Position;
 
-        var viewport = _viewportSize();
-        if (viewport.X <= 0f || viewport.Y <= 0f)
-            return NoEvents;
-
-        var screenDelta = new Vector2(
-            (gesture.Position.X - previous.X) * viewport.X * PanGain,
-            (gesture.Position.Y - previous.Y) * viewport.Y * PanGain);
+        // Measure the move in screen pixels so it matches the visible hand, including the webcam's
+        // aspect-fit crop and mirroring.
+        var screenDelta = (_toScreen(gesture.Position) - _toScreen(previous)) * PanGain;
 
         if (screenDelta.LengthSquared < 0.01f)
             return NoEvents;
@@ -132,9 +128,8 @@ public sealed class GestureToSceneMapper : IGestureToSceneMapper
 
     private Vector2 ToScreen(Vector2 normalizedPosition)
     {
-        var viewport = _viewportSize();
-        return new Vector2(
-            Math.Clamp(normalizedPosition.X, 0f, 1f) * viewport.X,
-            Math.Clamp(normalizedPosition.Y, 0f, 1f) * viewport.Y);
+        return _toScreen(new Vector2(
+            Math.Clamp(normalizedPosition.X, 0f, 1f),
+            Math.Clamp(normalizedPosition.Y, 0f, 1f)));
     }
 }

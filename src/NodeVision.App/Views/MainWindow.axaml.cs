@@ -4,10 +4,12 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Selection;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using NodeVision.App.Controls;
 using NodeVision.App.Integration;
@@ -60,12 +62,21 @@ public partial class MainWindow : Window
     private bool _panGestureEnded;
     private bool _stopInertia;
 
+    private static readonly IBrush GestureIdleBackground = new SolidColorBrush(Color.Parse("#121922"));
+    private static readonly IBrush GestureActiveBackground = new SolidColorBrush(Color.Parse("#2E4A68"));
+    private static readonly IBrush GestureIdleBorder = new SolidColorBrush(Color.Parse("#1E2A36"));
+    private static readonly IBrush GestureActiveBorder = new SolidColorBrush(Color.Parse("#5FA8E8"));
+
+    private const long GestureHighlightMs = 500;
+    private long _expandHighlightUntilMs;
+    private long _collapseHighlightUntilMs;
+
     public MainWindow()
     {
         InitializeComponent();
 
         _gestureToSceneMapper = new GestureToSceneMapper(
-            () => SceneViewControl.ViewportSize);
+            normalized => SceneViewControl.FrameToScreen(normalized));
 
         SceneViewControl.SetWebcamSource(_webcamFrameBuffer);
 
@@ -316,6 +327,39 @@ public partial class MainWindow : Window
             GestureModeText.Text = mode;
     }
 
+    /// <summary>
+    /// Highlights the gesture currently being made in the sidebar. Pan and zoom are live; expand and
+    /// collapse light up for a short moment after they fire.
+    /// </summary>
+    private void UpdateGestureSidebar()
+    {
+        if (!GestureSidebar.IsVisible)
+            return;
+
+        var panActive = _handSource?.IsPanActive ?? false;
+        var zoomActive = _handSource?.IsPinching ?? false;
+        var now = Environment.TickCount64;
+
+        SetGestureItemActive(GesturePanItem, panActive);
+        SetGestureItemActive(GestureZoomItem, zoomActive);
+        SetGestureItemActive(GestureExpandItem, _expandHighlightUntilMs > now);
+        SetGestureItemActive(GestureCollapseItem, _collapseHighlightUntilMs > now);
+    }
+
+    private static void SetGestureItemActive(Border item, bool active)
+    {
+        item.Background = active ? GestureActiveBackground : GestureIdleBackground;
+        item.BorderBrush = active ? GestureActiveBorder : GestureIdleBorder;
+        item.BorderThickness = new Thickness(active ? 1.5 : 1.0);
+    }
+
+    private void OnFlipCameraClick(object? sender, RoutedEventArgs e)
+    {
+        SceneViewControl.MirrorWebcam = !SceneViewControl.MirrorWebcam;
+        SceneViewControl.InvalidateVisual();
+        FlipCameraButton.Content = SceneViewControl.MirrorWebcam ? "Unflip camera" : "Flip camera";
+    }
+
     private void LoadAvailableCameras()
     {
         _availableCameras = CameraDeviceEnumerator.Enumerate();
@@ -479,6 +523,7 @@ public partial class MainWindow : Window
             CameraPlaceholder.IsVisible = false;
             CameraSelectionOverlay.IsVisible = false;
             SceneViewControl.IsVisible = true;
+            GestureSidebar.IsVisible = true;
 
             SaveCurrentSettings(selectedCamera, selectedMode);
             return true;
@@ -653,12 +698,14 @@ public partial class MainWindow : Window
         switch (gesture.Kind)
         {
             case GestureKind.OpenHand:
+                _expandHighlightUntilMs = Environment.TickCount64 + GestureHighlightMs;
                 if (TryGetExpandableNode(gesture.Position, out var expandId, out var expandCentre) &&
                     !_visualizationEngine.IsExpanded(expandId))
                     AddPulseAt(expandCentre, InteractionPulseKind.Expand);
                 break;
 
             case GestureKind.Fist:
+                _collapseHighlightUntilMs = Environment.TickCount64 + GestureHighlightMs;
                 if (TryGetExpandableNode(gesture.Position, out var collapseId, out var collapseCentre) &&
                     _visualizationEngine.IsExpanded(collapseId))
                     AddPulseAt(collapseCentre, InteractionPulseKind.Collapse);
@@ -675,7 +722,7 @@ public partial class MainWindow : Window
     private bool TryGetExpandableNode(Vector2 normalizedPosition, out int nodeId, out Vector2 screenCentre)
     {
         var viewport = SceneViewControl.ViewportSize;
-        var screen = new Vector2(normalizedPosition.X * viewport.X, normalizedPosition.Y * viewport.Y);
+        var screen = SceneViewControl.FrameToScreen(normalizedPosition);
         var canvas = _visualizationEngine.ScreenToCanvas(screen, viewport);
 
         nodeId = -1;
@@ -693,8 +740,7 @@ public partial class MainWindow : Window
 
     private void AddPulse(Vector2 normalizedPosition, InteractionPulseKind kind)
     {
-        var viewport = SceneViewControl.ViewportSize;
-        AddPulseAt(new Vector2(normalizedPosition.X * viewport.X, normalizedPosition.Y * viewport.Y), kind);
+        AddPulseAt(SceneViewControl.FrameToScreen(normalizedPosition), kind);
     }
 
     private void AddPulseAt(Vector2 screenPosition, InteractionPulseKind kind)
@@ -705,6 +751,7 @@ public partial class MainWindow : Window
     private void UpdateInteractionOverlay(float deltaTime)
     {
         UpdateGestureModeIndicator();
+        UpdateGestureSidebar();
 
         for (var i = _interactionPulses.Count - 1; i >= 0; i--)
         {
@@ -728,9 +775,9 @@ public partial class MainWindow : Window
         {
             foreach (var landmark in _handSource.LastLandmarks)
             {
-                handOutline.Add(new Vector2(
+                handOutline.Add(SceneViewControl.FrameToScreen(new Vector2(
                     landmark.X / _handSource.FrameWidth,
-                    landmark.Y / _handSource.FrameHeight));
+                    landmark.Y / _handSource.FrameHeight)));
             }
 
             occluders = _visualizationEngine.VisibleNodeScreenBounds(viewport);
@@ -744,9 +791,9 @@ public partial class MainWindow : Window
             if (pointer != PointerGesture.None)
             {
                 var palm = _handSource.LastPalmPosition;
-                handCursor = new Vector2(
-                    palm.X / _handSource.FrameWidth * viewport.X,
-                    palm.Y / _handSource.FrameHeight * viewport.Y);
+                handCursor = SceneViewControl.FrameToScreen(new Vector2(
+                    palm.X / _handSource.FrameWidth,
+                    palm.Y / _handSource.FrameHeight));
             }
         }
 
@@ -780,35 +827,28 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// True when the hand's on-screen bounding box overlaps one of the occluder rectangles (visible
-    /// scene nodes), i.e. the scene is drawn over the presenter's hand.
+    /// scene nodes), i.e. the scene is drawn over the presenter's hand. Landmarks are screen-space.
     /// </summary>
-    private bool IsHandOccluded(
-        IReadOnlyList<Vector2> normalizedLandmarks,
+    private static bool IsHandOccluded(
+        IReadOnlyList<Vector2> screenLandmarks,
         IReadOnlyList<(Vector2 Min, Vector2 Max)> occluders)
     {
-        if (normalizedLandmarks.Count == 0 || occluders.Count == 0)
-            return false;
-
-        var viewport = SceneViewControl.ViewportSize;
-        if (viewport.X <= 0f || viewport.Y <= 0f)
+        if (screenLandmarks.Count == 0 || occluders.Count == 0)
             return false;
 
         var min = new Vector2(float.MaxValue, float.MaxValue);
         var max = new Vector2(float.MinValue, float.MinValue);
 
-        foreach (var landmark in normalizedLandmarks)
+        foreach (var landmark in screenLandmarks)
         {
             min = new Vector2(MathF.Min(min.X, landmark.X), MathF.Min(min.Y, landmark.Y));
             max = new Vector2(MathF.Max(max.X, landmark.X), MathF.Max(max.Y, landmark.Y));
         }
 
-        var screenMin = new Vector2(min.X * viewport.X, min.Y * viewport.Y);
-        var screenMax = new Vector2(max.X * viewport.X, max.Y * viewport.Y);
-
         foreach (var rect in occluders)
         {
-            if (screenMax.X >= rect.Min.X && screenMin.X <= rect.Max.X &&
-                screenMax.Y >= rect.Min.Y && screenMin.Y <= rect.Max.Y)
+            if (max.X >= rect.Min.X && min.X <= rect.Max.X &&
+                max.Y >= rect.Min.Y && min.Y <= rect.Max.Y)
                 return true;
         }
 
@@ -851,20 +891,24 @@ public partial class MainWindow : Window
 
         var landmarks = _handSource.LastLandmarks;
 
+        Vector2 ToScreen(float x, float y) => SceneViewControl.FrameToScreen(new Vector2(x / width, y / height));
+
         var debugLandmarks = new List<DebugLandmark>(landmarks.Length);
         foreach (var landmark in landmarks)
-            debugLandmarks.Add(new DebugLandmark(new Vector2(landmark.X / width, landmark.Y / height), landmark.Name));
+            debugLandmarks.Add(new DebugLandmark(ToScreen(landmark.X, landmark.Y), landmark.Name));
 
         var palmKeypoints = new List<Vector2>();
         (Vector2 Min, Vector2 Max)? palmBox = null;
         if (_handSource.LastPalm is { } palm)
         {
             foreach (var keypoint in palm.PalmLandmarks)
-                palmKeypoints.Add(new Vector2(keypoint.X / width, keypoint.Y / height));
+                palmKeypoints.Add(ToScreen(keypoint.X, keypoint.Y));
 
+            var cornerA = ToScreen(palm.Box.X1, palm.Box.Y1);
+            var cornerB = ToScreen(palm.Box.X2, palm.Box.Y2);
             palmBox = (
-                new Vector2(palm.Box.X1 / width, palm.Box.Y1 / height),
-                new Vector2(palm.Box.X2 / width, palm.Box.Y2 / height));
+                new Vector2(MathF.Min(cornerA.X, cornerB.X), MathF.Min(cornerA.Y, cornerB.Y)),
+                new Vector2(MathF.Max(cornerA.X, cornerB.X), MathF.Max(cornerA.Y, cornerB.Y)));
         }
 
         Vector2? pinchPosition = null;
@@ -872,13 +916,13 @@ public partial class MainWindow : Window
         Vector2? palmCenter = null;
         if (landmarks.Length > 0)
         {
-            pinchPosition = new Vector2(_handSource.LastPinch.Position.X / width, _handSource.LastPinch.Position.Y / height);
+            pinchPosition = ToScreen(_handSource.LastPinch.Position.X, _handSource.LastPinch.Position.Y);
 
             if (landmarks.Length > 8)
-                pointPosition = new Vector2(landmarks[8].X / width, landmarks[8].Y / height);
+                pointPosition = ToScreen(landmarks[8].X, landmarks[8].Y);
 
             if (landmarks.Length >= 21)
-                palmCenter = new Vector2(_handSource.LastPalmPosition.X / width, _handSource.LastPalmPosition.Y / height);
+                palmCenter = ToScreen(_handSource.LastPalmPosition.X, _handSource.LastPalmPosition.Y);
         }
 
         return new HandDebugSnapshot(

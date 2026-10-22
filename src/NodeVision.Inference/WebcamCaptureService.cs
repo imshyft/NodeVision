@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,6 +61,9 @@ public sealed class WebcamCaptureService : IDisposable
     /// requested mode.
     /// </summary>
     public CameraMode? ActualMode { get; private set; }
+
+    /// <summary>How long the last blocking camera read took, in milliseconds (perf diagnostics).</summary>
+    public double ReadMs { get; private set; }
 
     public WebcamCaptureService(CaptureConfig config, WebcamFrameRingBuffer? ringBuffer = null)
     {
@@ -160,13 +164,17 @@ public sealed class WebcamCaptureService : IDisposable
             _bgraFrame = new Mat();
             
             var timestamp = 0L;
-            var effectiveFps = ActualMode is { Fps: > 0 } actual ? actual.Fps : _config.Fps;
+            // Pace to the requested mode, not the driver's read-back: some drivers report a bogus
+            // low FPS, which would throttle capture well below what the camera can deliver.
+            var effectiveFps = _config.Fps > 0 ? _config.Fps : 30;
             var frameInterval = TimeSpan.FromMilliseconds(1000.0 / effectiveFps);
             var nextFrameTime = DateTime.UtcNow;
 
             while (!_cts!.Token.IsCancellationRequested)
             {
+                var readStart = Stopwatch.GetTimestamp();
                 var readResult = _capture.Read(_frame);
+                ReadMs = Stopwatch.GetElapsedTime(readStart).TotalMilliseconds;
                 
                 if (!readResult || _frame.Empty())
                 {

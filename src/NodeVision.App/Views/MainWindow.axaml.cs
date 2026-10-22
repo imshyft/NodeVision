@@ -318,10 +318,14 @@ public partial class MainWindow : Window
             return;
 
         var engine = _inferenceEngine;
+        var capture = _webcamCaptureService;
+        var modeText = capture?.ActualMode?.ToString() ?? "none";
+
         PerfText.Text =
             $"render   {_renderFps,5:0.0} fps   {_frameMs,5:0.0} ms\n" +
-            $"capture  {_captureFps,5:0.0} fps\n" +
-            $"detect   {_inferenceFps,5:0.0} fps   palm {engine?.PalmMs ?? 0,5:0.0} ms   hand {engine?.LandmarkMs ?? 0,5:0.0} ms   total {engine?.TotalMs ?? 0,5:0.0} ms";
+            $"capture  {_captureFps,5:0.0} fps   read {capture?.ReadMs ?? 0,5:0.0} ms\n" +
+            $"detect   {_inferenceFps,5:0.0} fps   palm {engine?.PalmMs ?? 0,5:0.0} ms   hand {engine?.LandmarkMs ?? 0,5:0.0} ms   total {engine?.TotalMs ?? 0,5:0.0} ms\n" +
+            $"mode     {modeText}";
     }
 
     private static string BuildGestureHelpText()

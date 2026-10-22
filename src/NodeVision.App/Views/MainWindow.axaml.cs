@@ -50,7 +50,7 @@ public partial class MainWindow : Window
 
     private bool _helpVisible;
     private const float PanKeyStep = 80f;
-    private const float ConnectionHitRadiusPixels = 26f;
+    private const float ConnectionHitRadiusPixels = 60f;
 
     private const float PulseLifetimeSeconds = 0.55f;
     private readonly List<ActivePulse> _interactionPulses = new();
@@ -737,47 +737,70 @@ public partial class MainWindow : Window
     /// </summary>
     private bool TryFocusChildUnderConnection(Vector2 normalizedPosition)
     {
-        var viewport = SceneViewControl.ViewportSize;
-        if (viewport.X <= 0f || viewport.Y <= 0f)
-            return false;
-
         var screen = SceneViewControl.FrameToScreen(normalizedPosition);
-        var canvas = _visualizationEngine.ScreenToCanvas(screen, viewport);
-
-        // A node under the point takes priority; line focus is only the fallback.
-        if (_visualizationEngine.HitTestNode(canvas) is not null)
-            return false;
-
-        Connection? best = null;
-        var bestDistance = ConnectionHitRadiusPixels;
-
-        foreach (var sceneObject in _visualizationEngine.Scene.Objects)
-        {
-            if (sceneObject is not Connection connection ||
-                connection.ParentNode is not { } parent ||
-                connection.ChildNode is not { } child)
-                continue;
-
-            if (parent.Reveal <= 0.01f || child.Reveal <= 0.01f)
-                continue;
-
-            var distance = DistanceToConnection(screen, parent, child, viewport);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                best = connection;
-            }
-        }
-
-        if (best?.ChildNode is not { } target)
+        if (!TryGetConnectionUnderScreenPoint(screen, out var connection, out _) ||
+            connection?.ChildNode is not { } target)
             return false;
 
         _visualizationEngine.FocusOnNode(target.Id);
         return true;
     }
 
-    private float DistanceToConnection(Vector2 screenPoint, Node parent, Node child, Vector2 viewport)
+    /// <summary>
+    /// Finds the visible connection nearest to a screen point, within the hit radius. Nodes take
+    /// priority, so this returns false when the point is over a node.
+    /// </summary>
+    private bool TryGetConnectionUnderScreenPoint(
+        Vector2 screen,
+        out Connection? connection,
+        out InteractionCurve curve)
     {
+        connection = null;
+        curve = default;
+
+        var viewport = SceneViewControl.ViewportSize;
+        if (viewport.X <= 0f || viewport.Y <= 0f)
+            return false;
+
+        var canvas = _visualizationEngine.ScreenToCanvas(screen, viewport);
+
+        // A node under the point takes priority; line focus is only the fallback.
+        if (_visualizationEngine.HitTestNode(canvas) is not null)
+            return false;
+
+        var bestDistance = ConnectionHitRadiusPixels;
+
+        foreach (var sceneObject in _visualizationEngine.Scene.Objects)
+        {
+            if (sceneObject is not Connection candidate ||
+                candidate.ParentNode is not { } parent ||
+                candidate.ChildNode is not { } child)
+                continue;
+
+            if (parent.Reveal <= 0.01f || child.Reveal <= 0.01f)
+                continue;
+
+            var distance = DistanceToConnection(screen, parent, child, viewport, out var candidateCurve);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                connection = candidate;
+                curve = candidateCurve;
+            }
+        }
+
+        return connection is not null;
+    }
+
+    private float DistanceToConnection(
+        Vector2 screenPoint,
+        Node parent,
+        Node child,
+        Vector2 viewport,
+        out InteractionCurve curve)
+    {
+        curve = default;
+
         var startCanvas = parent.Position + parent.Size * 0.5f;
         var endCanvas = child.Position + child.Size * 0.5f;
         var delta = endCanvas - startCanvas;
@@ -795,6 +818,8 @@ public partial class MainWindow : Window
         var end = _visualizationEngine.CanvasToScreen(endCanvas, viewport);
         var control1 = _visualizationEngine.CanvasToScreen(control1Canvas, viewport);
         var control2 = _visualizationEngine.CanvasToScreen(control2Canvas, viewport);
+
+        curve = new InteractionCurve(start, control1, control2, end);
 
         const int steps = 24;
         var minimum = float.MaxValue;
@@ -898,6 +923,7 @@ public partial class MainWindow : Window
 
         (Vector2 Min, Vector2 Max)? hoverBounds = null;
         var hoverExpanded = false;
+        InteractionCurve? hoverConnection = null;
 
         if (viewport.X > 0f && viewport.Y > 0f && (handCursor is not null || _pointerInside))
         {
@@ -910,6 +936,10 @@ public partial class MainWindow : Window
                 if (_visualizationEngine.TryGetNodeScreenBounds(nodeId, viewport, out var min, out var max))
                     hoverBounds = (min, max);
             }
+            else if (TryGetConnectionUnderScreenPoint(cursor, out _, out var curve))
+            {
+                hoverConnection = curve;
+            }
         }
 
         var pulses = new List<InteractionPulse>(_interactionPulses.Count);
@@ -919,8 +949,9 @@ public partial class MainWindow : Window
                 Math.Clamp(pulse.Age / PulseLifetimeSeconds, 0f, 1f),
                 pulse.Kind));
 
-        SceneViewControl.Interaction = handCursor is not null || hoverBounds is not null || pulses.Count > 0 || handOccluded
-            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses, handOutline, handOccluded, occluders)
+        SceneViewControl.Interaction = handCursor is not null || hoverBounds is not null ||
+                                       hoverConnection is not null || pulses.Count > 0 || handOccluded
+            ? new InteractionOverlay(handCursor, pointer, hoverBounds, hoverExpanded, pulses, handOutline, handOccluded, occluders, hoverConnection)
             : null;
     }
 

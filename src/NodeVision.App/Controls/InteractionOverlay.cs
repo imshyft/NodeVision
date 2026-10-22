@@ -35,6 +35,15 @@ public readonly record struct InteractionPulse(
 /// Always-on interaction feedback: where the hand cursor is, which expandable node it is over, and
 /// any transient pulses. Positions are in viewport pixels (screen space), like the webcam background.
 /// </summary>
+/// <summary>
+/// A connection's cubic curve in screen pixels, used to highlight the line under the cursor.
+/// </summary>
+public readonly record struct InteractionCurve(
+    Vector2 Start,
+    Vector2 Control1,
+    Vector2 Control2,
+    Vector2 End);
+
 public sealed record InteractionOverlay(
     Vector2? HandCursor,
     PointerGesture Pointer,
@@ -43,4 +52,5 @@ public sealed record InteractionOverlay(
     IReadOnlyList<InteractionPulse> Pulses,
     IReadOnlyList<Vector2> HandOutline,
     bool HandOccluded,
-    IReadOnlyList<(Vector2 Min, Vector2 Max)> Occluders);
+    IReadOnlyList<(Vector2 Min, Vector2 Max)> Occluders,
+    InteractionCurve? HoverConnection);

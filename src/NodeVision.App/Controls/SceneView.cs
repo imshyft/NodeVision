@@ -559,6 +559,7 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
     private static readonly SKColor CollapseColour = new(255, 160, 70);
     private static readonly SKColor HoverExpandable = new(110, 205, 255);
     private static readonly SKColor HoverExpanded = new(110, 225, 150);
+    private static readonly SKColor ConnectionHoverColour = new(90, 230, 130);
 
     // Hand bones for the occluded outline. The two palm-to-wrist edges are deliberately omitted so
     // the outline does not run down to the base of the wrist.
@@ -606,10 +607,95 @@ internal sealed class InteractionDrawOperation : ICustomDrawOperation
             if (_overlay.HandOccluded)
                 DrawHandOutline(canvas);
 
+            DrawConnectionHover(canvas);
             DrawHover(canvas);
             DrawPulses(canvas);
             DrawCursor(canvas);
         }
+    }
+
+    /// <summary>
+    /// Highlights the connection under the cursor in green with an arrow badge, showing that the
+    /// expand gesture will follow it to the child.
+    /// </summary>
+    private void DrawConnectionHover(SKCanvas canvas)
+    {
+        if (_overlay.HoverConnection is not { } curve)
+            return;
+
+        using var builder = new SKPathBuilder();
+        builder.MoveTo(curve.Start.X, curve.Start.Y);
+        builder.CubicTo(
+            curve.Control1.X, curve.Control1.Y,
+            curve.Control2.X, curve.Control2.Y,
+            curve.End.X, curve.End.Y);
+        using var path = builder.Detach();
+
+        using var glow = new SKPaint
+        {
+            Color = ConnectionHoverColour.WithAlpha(70),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 12f,
+            StrokeCap = SKStrokeCap.Round,
+        };
+        using var line = new SKPaint
+        {
+            Color = ConnectionHoverColour.WithAlpha(235),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 3.5f,
+            StrokeCap = SKStrokeCap.Round,
+        };
+
+        canvas.DrawPath(path, glow);
+        canvas.DrawPath(path, line);
+
+        var mid = CubicPoint(curve.Start, curve.Control1, curve.Control2, curve.End, 0.5f);
+        var ahead = CubicPoint(curve.Start, curve.Control1, curve.Control2, curve.End, 0.56f);
+        var dx = ahead.X - mid.X;
+        var dy = ahead.Y - mid.Y;
+        var length = MathF.Sqrt(dx * dx + dy * dy);
+        if (length < 1e-3f)
+            return;
+
+        var ux = dx / length;
+        var uy = dy / length;
+        var px = -uy;
+        var py = ux;
+
+        using var badge = new SKPaint { Color = ConnectionHoverColour, IsAntialias = true, Style = SKPaintStyle.Fill };
+        canvas.DrawCircle(mid, 13f, badge);
+
+        var tip = new SKPoint(mid.X + ux * 7f, mid.Y + uy * 7f);
+        var back = new SKPoint(mid.X - ux * 4f, mid.Y - uy * 4f);
+        var left = new SKPoint(back.X + px * 6f, back.Y + py * 6f);
+        var right = new SKPoint(back.X - px * 6f, back.Y - py * 6f);
+
+        using var arrow = new SKPaint
+        {
+            Color = new SKColor(10, 30, 20),
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 2.5f,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
+        canvas.DrawLine(left, tip, arrow);
+        canvas.DrawLine(tip, right, arrow);
+    }
+
+    private static SKPoint CubicPoint(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+    {
+        var inverse = 1f - t;
+        var b0 = inverse * inverse * inverse;
+        var b1 = 3f * inverse * inverse * t;
+        var b2 = 3f * inverse * t * t;
+        var b3 = t * t * t;
+
+        return new SKPoint(
+            p0.X * b0 + p1.X * b1 + p2.X * b2 + p3.X * b3,
+            p0.Y * b0 + p1.Y * b1 + p2.Y * b2 + p3.Y * b3);
     }
 
     /// <summary>

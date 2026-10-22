@@ -9,6 +9,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Selection;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using NodeVision.App.Controls;
@@ -74,6 +75,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        ConfigureGestureToolTips();
 
         _gestureToSceneMapper = new GestureToSceneMapper(
             normalized => SceneViewControl.FrameToScreen(normalized));
@@ -338,6 +341,76 @@ public partial class MainWindow : Window
         item.Background = active ? GestureActiveBackground : GestureIdleBackground;
         item.BorderBrush = active ? GestureActiveBorder : GestureIdleBorder;
         item.BorderThickness = new Thickness(active ? 1.5 : 1.0);
+    }
+
+    private void ConfigureGestureToolTips()
+    {
+        SetGestureToolTip(
+            GesturePanItem,
+            GestureHintKind.Pan,
+            "Pan",
+            "Point with the index, curl the other fingers, and touch the middle fingertip to the thumb. Move to pan; flick to glide.");
+
+        SetGestureToolTip(
+            GestureZoomItem,
+            GestureHintKind.Zoom,
+            "Zoom",
+            "Pinch thumb and index with the palm turned edge-on, then rotate your wrist to zoom.");
+
+        SetGestureToolTip(
+            GestureExpandItem,
+            GestureHintKind.Expand,
+            "Expand",
+            "Make a quick fist, then open the palm over a node or connection.");
+
+        SetGestureToolTip(
+            GestureCollapseItem,
+            GestureHintKind.Collapse,
+            "Collapse",
+            "Hold a fist over a node to collapse it.");
+    }
+
+    private static void SetGestureToolTip(Control target, GestureHintKind kind, string title, string description)
+    {
+        var panel = new StackPanel
+        {
+            Width = 230,
+            Spacing = 10,
+        };
+
+        panel.Children.Add(new GestureHint
+        {
+            Kind = kind,
+            Width = 120,
+            Height = 120,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 14,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = description,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Foreground = new SolidColorBrush(Color.Parse("#B8C6D6")),
+        });
+
+        var content = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#F0121820")),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
+            Child = panel,
+        };
+
+        ToolTip.SetTip(target, content);
     }
 
     private void OnFlipCameraClick(object? sender, RoutedEventArgs e)
